@@ -52,6 +52,15 @@ def employee_for(db: Session, employee_id) -> Employee:
     return emp
 
 
+def employee_by_user(db: Session, user_id: int) -> Employee:
+    """Resolve a target employee by their USER id (the identifier the rest of the app uses),
+    creating the HR record on demand."""
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404, "User not found")
+    return get_or_create_employee(db, u)
+
+
 def display_first_name(db: Session, user: User) -> str:
     """The name to greet/address a person by: their HR preferred name, else the first part of
     their legal name. Used by greetings and the AI daily brief."""

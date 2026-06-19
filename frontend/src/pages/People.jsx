@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar } from "../components/ui.jsx";
@@ -153,6 +153,7 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
 
 export default function People() {
   const { user: me } = useOutletContext() || {};
+  const navigate = useNavigate();
   const toast = useToast();
   const [users, setUsers] = useState(null);
   const [teams, setTeams] = useState([]);
@@ -275,6 +276,9 @@ export default function People() {
             const canEditAdmin = u.role !== "admin" || isAdmin;
             return (
               <div key={u.id} className="flex" style={{ gap: 12, alignItems: "center", padding: "12px 16px", borderTop: i ? "1px solid var(--border)" : "none" }}>
+                <div className="flex" role="button" title={`Open ${u.name}'s profile`}
+                  onClick={() => navigate(`/people/${u.id}`)}
+                  style={{ gap: 12, alignItems: "center", flex: 1, minWidth: 0, cursor: "pointer" }}>
                 <Avatar name={u.name} color={u.avatar_color} size={34} photo={u.photo} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -291,8 +295,10 @@ export default function People() {
                   </div>
                   <div className="muted small">{u.preferred_name && u.preferred_name !== u.name ? `${u.name} · ` : ""}{u.email}{u.job_title ? ` · ${u.job_title}` : ""}</div>
                 </div>
+                </div>
                 <span className="small" style={{ color: st.color, fontWeight: 600, flexShrink: 0, minWidth: 56 }}>{st.label}</span>
                 <div className="flex" style={{ gap: 6, flexShrink: 0 }}>
+                  <button className="btn btn-outline btn-sm" onClick={() => navigate(`/people/${u.id}`)}>Profile</button>
                   {!isLeaver && canEditAdmin && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(u)}>Edit</button>}
                   {!isLeaver && canEditAdmin && <button className="btn btn-outline btn-sm" onClick={() => sendResetLink(u)}>{u.must_set_password ? "Resend link" : "Send login link"}</button>}
                   {!isLeaver && canEditAdmin && u.id !== me?.id && <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }} onClick={() => makeLeaver(u)}>Leaver</button>}

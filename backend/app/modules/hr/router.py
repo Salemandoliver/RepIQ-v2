@@ -127,36 +127,73 @@ def list_employees(db: Session = Depends(get_db), user: User = Depends(get_curre
     return {"employees": out}
 
 
-@router.get("/employees/{employee_id}")
-def get_employee(employee_id: str, db: Session = Depends(get_db),
+# The {user_id} below is a USER id (the identifier the rest of the app uses); it resolves to
+# that person's HR record. Every response is projected to the caller's scopes for the target.
+@router.get("/employees/{user_id}")
+def get_employee(user_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    emp = svc.employee_for(db, employee_id)
+    emp = svc.employee_by_user(db, user_id)
     scopes = svc.viewer_scopes(db, user, emp)
     if not scopes:
         raise HTTPException(403, "Not permitted")
     return svc.composite(db, emp, scopes)
 
 
-@router.get("/employees/{employee_id}/personal")
-def get_employee_personal(employee_id: str, db: Session = Depends(get_db),
-                          user: User = Depends(get_current_user)):
-    emp = svc.employee_for(db, employee_id)
-    scopes = svc.viewer_scopes(db, user, emp)
-    if not perms_can_read(scopes):
-        raise HTTPException(403, "Not permitted")
-    return svc.personal_view(emp, scopes)
-
-
-@router.put("/employees/{employee_id}/personal")
-def put_employee_personal(employee_id: str, body: dict, request: Request,
+@router.put("/employees/{user_id}/personal")
+def put_employee_personal(user_id: int, body: dict, request: Request,
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    emp = svc.employee_for(db, employee_id)
+    emp = svc.employee_by_user(db, user_id)
     scopes = svc.viewer_scopes(db, user, emp)
     svc.update_personal(db, emp, body or {}, scopes, user, request)
     db.refresh(emp)
     return svc.personal_view(emp, scopes)
 
 
-def perms_can_read(scopes: set[str]) -> bool:
+@router.put("/employees/{user_id}/contact")
+def put_employee_contact(user_id: int, body: dict, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    svc.update_contact(db, emp, body or {}, scopes, user, request)
+    db.refresh(emp)
+    return svc.contact_view(emp, scopes)
+
+
+@router.post("/employees/{user_id}/emergency-contacts")
+def add_employee_emergency(user_id: int, body: dict, request: Request,
+                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from . import permissions as perms
-    return bool(perms.PERSONAL.readable_group_names(scopes))
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    if not perms.EMERGENCY.can_write("self.emergency", scopes):
+        raise HTTPException(403, "Not permitted")
+    ec = EmployeeEmergencyContact(
+        employee_id=emp.id,
+        full_name=(body or {}).get("full_name"), relation=(body or {}).get("relation"),
+        phone_primary=(body or {}).get("phone_primary"), phone_secondary=(body or {}).get("phone_secondary"),
+        email=(body or {}).get("email"), address=(body or {}).get("address"),
+        priority=int((body or {}).get("priority") or 1), notes=(body or {}).get("notes"))
+    db.add(ec)
+    record_audit(db, actor=user, action="CREATE", entity_type="employee_emergency_contact",
+                 entity_id=emp.id, field="full_name", new=ec.full_name, request=request)
+    db.commit()
+    return svc.emergency_view(emp, scopes)
+
+
+@router.delete("/employees/{user_id}/emergency-contacts/{ec_id}")
+def delete_employee_emergency(user_id: int, ec_id: str, request: Request,
+                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from datetime import datetime
+    from . import permissions as perms
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    if not perms.EMERGENCY.can_write("self.emergency", scopes):
+        raise HTTPException(403, "Not permitted")
+    ec = db.get(EmployeeEmergencyContact, ec_id)
+    if not ec or ec.employee_id != emp.id:
+        raise HTTPException(404, "Emergency contact not found")
+    ec.deleted_at = datetime.utcnow()
+    record_audit(db, actor=user, action="DELETE", entity_type="employee_emergency_contact",
+                 entity_id=emp.id, field="full_name", old=ec.full_name, request=request)
+    db.commit()
+    return {"ok": True}
