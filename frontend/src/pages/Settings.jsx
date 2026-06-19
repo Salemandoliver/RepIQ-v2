@@ -16,6 +16,7 @@ const SECTIONS = [
   ["salesiq", "SalesIQ Targets"],
   ["ingestion", "Call Ingestion"],
   ["videos", "Performance Videos"],
+  ["hrimport", "HR Import"],
   ["vocabulary", "Vocabulary"],
   ["privacy", "Privacy"],
 ];
@@ -1395,6 +1396,114 @@ function IngestionSection() {
   );
 }
 
+function HRImportSection() {
+  const toast = useToast();
+  const [csv, setCsv] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [holiday, setHoliday] = useState(null);
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFileName(f.name); setPreview(null); setResult(null);
+    const reader = new FileReader();
+    reader.onload = () => setCsv(String(reader.result || ""));
+    reader.readAsText(f);
+  };
+
+  const doPreview = async () => {
+    if (!csv) { toast("Choose a SafeHR StaffDetails CSV first.", "error"); return; }
+    setBusy(true); setResult(null);
+    try { setPreview(await api.post("/api/v1/hr/import/safehr/preview", { csv })); }
+    catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+  };
+  const doApply = async () => {
+    if (!window.confirm(`Import ${preview.matchedCount} matched staff into HR records? This updates HR data only and won't touch SafeHR or your trackers.`)) return;
+    setBusy(true);
+    try { const r = await api.post("/api/v1/hr/import/safehr/apply", { csv }); setResult(r); toast(`Imported ${r.appliedCount} staff.`, "success"); }
+    catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+  };
+  const syncHoliday = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post("/api/v1/hr/import/holiday/sync", {});
+      setHoliday(r);
+      if (r.ok) toast(`Synced ${r.imported} leave days for ${r.people} people.`, "success");
+      else toast(r.error || "Sync failed", "error");
+    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="card">
+        <h3 className="card-title" style={{ marginTop: 0 }}>Import from SafeHR</h3>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Upload a SafeHR <b>StaffDetails</b> CSV export. Staff are matched to existing RepIQ users by company email;
+          their personal, contact, role, contract, emergency-contact and holiday-allowance records are filled in.
+          Salary &amp; tax are not imported here. Runs alongside SafeHR — nothing is changed in SafeHR, and you can re-run it any time.
+        </p>
+        <div className="flex" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label className="btn btn-outline btn-sm" style={{ cursor: "pointer" }}>
+            Choose CSV…<input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onFile} />
+          </label>
+          {fileName && <span className="small muted">{fileName}</span>}
+          <button className="btn btn-primary btn-sm" onClick={doPreview} disabled={busy || !csv}>{busy ? "Working…" : "Preview"}</button>
+        </div>
+
+        {preview && (
+          <div style={{ marginTop: 14 }}>
+            <div className="flex" style={{ gap: 16, marginBottom: 8 }}>
+              <span className="small"><b>{preview.matchedCount}</b> matched</span>
+              <span className="small" style={{ color: preview.unmatchedCount ? "var(--amber)" : "var(--text-soft)" }}><b>{preview.unmatchedCount}</b> unmatched</span>
+              <span className="small muted">of {preview.total} rows</span>
+            </div>
+            {preview.unmatchedCount > 0 && (
+              <div className="small muted" style={{ marginBottom: 8 }}>
+                Not matched (no RepIQ user with that email — skipped): {preview.unmatched.map((u) => `${u.safehrName || u.companyEmail}`).join(", ")}
+              </div>
+            )}
+            <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+              {preview.matched.map((m) => (
+                <div key={m.userId} className="flex small" style={{ justifyContent: "space-between", padding: "6px 10px", borderBottom: "1px solid var(--border)" }}>
+                  <span>{m.name}{m.safehrName && m.safehrName !== m.name ? <span className="muted"> · {m.safehrName}</span> : ""}</span>
+                  <span className="muted">{m.holidayAllowance ? `${m.holidayAllowance}d` : ""}{m.manager ? ` · mgr: ${m.manager}` : ""}</span>
+                </div>
+              ))}
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={doApply} disabled={busy || !preview.matchedCount}>
+              Import {preview.matchedCount} staff
+            </button>
+          </div>
+        )}
+        {result && (
+          <div className="small" style={{ marginTop: 12, color: "var(--green)" }}>
+            ✓ Imported {result.appliedCount} staff{result.skippedCount ? ` · skipped ${result.skippedCount}` : ""}.
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 className="card-title" style={{ marginTop: 0 }}>Sync holiday from the Holiday Tracker</h3>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Reads the existing Holiday Tracker and records each person's booked holiday / sick / leave days against their HR profile
+          (leave year runs April–March). Re-running replaces the tracker-sourced records, so it's safe to repeat.
+        </p>
+        <button className="btn btn-primary btn-sm" onClick={syncHoliday} disabled={busy}>{busy ? "Syncing…" : "Sync holiday now"}</button>
+        {holiday && holiday.ok && (
+          <div className="small" style={{ marginTop: 10 }}>
+            <span style={{ color: "var(--green)" }}>✓ {holiday.imported} leave days imported for {holiday.people} people</span> from {holiday.rows} tracker marks.
+            {holiday.unmatched?.length > 0 && <div className="muted" style={{ marginTop: 4 }}>Unmatched tracker names: {holiday.unmatched.join(", ")}</div>}
+          </div>
+        )}
+        {holiday && !holiday.ok && <div className="small" style={{ marginTop: 10, color: "var(--red)" }}>{holiday.error}</div>}
+      </div>
+    </div>
+  );
+}
+
 function PerformanceVideosSection() {
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -1491,6 +1600,7 @@ export default function Settings() {
           {section === "salesiq" && <SalesTargetsSection />}
           {section === "ingestion" && <IngestionSection />}
           {section === "videos" && <PerformanceVideosSection />}
+          {section === "hrimport" && <HRImportSection />}
           {section === "vocabulary" && <VocabularySection />}
           {section === "privacy" && <PrivacySection />}
         </div>

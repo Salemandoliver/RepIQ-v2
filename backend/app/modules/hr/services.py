@@ -10,7 +10,7 @@ from ...core.audit import record_audit
 from ...models import User
 from . import permissions as perms
 from .models import (Employee, EmployeeContact, EmployeeContract, EmployeeEmergencyContact,
-                     EmployeePersonal, EmployeeRole)
+                     EmployeeHoliday, EmployeePersonal, EmployeeRole, LeaveRecord)
 
 _PERSONAL_FIELDS = ["preferred_name", "profile_photo", "title", "first_name", "middle_name",
                     "last_name", "dob", "sex", "gender_identity", "nationality", "about", "ni_number"]
@@ -43,6 +43,8 @@ def get_or_create_employee(db: Session, user: User) -> Employee:
         db.add(EmployeeRole(employee_id=emp.id))
     if emp.employment is None:
         db.add(EmployeeContract(employee_id=emp.id, start_date=emp.start_date))
+    if emp.holiday is None:
+        db.add(EmployeeHoliday(employee_id=emp.id))
     db.commit()
     db.refresh(emp)
     return emp
@@ -61,6 +63,8 @@ def employee_for(db: Session, employee_id) -> Employee:
         db.add(EmployeeRole(employee_id=emp.id))
     if emp.employment is None:
         db.add(EmployeeContract(employee_id=emp.id, start_date=emp.start_date))
+    if emp.holiday is None:
+        db.add(EmployeeHoliday(employee_id=emp.id))
     db.commit()
     db.refresh(emp)
     return emp
@@ -173,6 +177,65 @@ def contract_details_view(emp: Employee, scopes: set[str]) -> dict:
     return perms.CONTRACT_DETAILS.project_flat(data, scopes)
 
 
+_LEAVE_YEAR_START_MONTH = 4          # company holiday year runs April–March
+
+
+def leave_year_bounds(today=None):
+    """(start, end_exclusive) of the April–March leave year containing ``today``."""
+    from datetime import date
+    today = today or date.today()
+    start_year = today.year if today.month >= _LEAVE_YEAR_START_MONTH else today.year - 1
+    return date(start_year, _LEAVE_YEAR_START_MONTH, 1), date(start_year + 1, _LEAVE_YEAR_START_MONTH, 1)
+
+
+def holiday_view(emp: Employee, scopes: set[str]) -> dict:
+    h = emp.holiday
+    base = perms.HOLIDAY.project_flat({
+        "allowance_days": h.allowance_days if h else None,
+        "carried_over_days": (h.carried_over_days if h else None) or 0.0,
+        "includes_bank_holidays": h.includes_bank_holidays if h else None,
+    }, scopes)
+    if not perms.HOLIDAY.can_read("holiday.core", scopes):
+        return base
+    start, end = leave_year_bounds()
+    taken_holiday = taken_sick = 0.0
+    recent = []
+    for lr in emp.leave_records:
+        if start <= lr.leave_date < end:
+            if lr.leave_type == "Holiday":
+                taken_holiday += lr.portion or 1.0
+            elif lr.leave_type == "Sick":
+                taken_sick += lr.portion or 1.0
+            recent.append({"date": lr.leave_date.isoformat(), "portion": lr.portion,
+                           "type": lr.leave_type, "code": lr.code})
+    allowance = (base.get("allowance_days") or 0.0) + (base.get("carried_over_days") or 0.0)
+    recent.sort(key=lambda r: r["date"], reverse=True)
+    base.update({
+        "leaveYear": f"{start.year}/{end.year}", "leaveYearStart": start.isoformat(),
+        "takenHoliday": round(taken_holiday, 1), "takenSick": round(taken_sick, 1),
+        "remaining": round(allowance - taken_holiday, 1), "entitlement": round(allowance, 1),
+        "records": recent[:60],
+    })
+    return base
+
+
+def update_holiday(db, emp, changes: dict, scopes, actor, request):
+    allowed, denied = perms.HOLIDAY.filter_writes(changes, scopes)
+    if denied:
+        raise HTTPException(403, f"Not permitted to edit: {', '.join(denied)}")
+    row = emp.holiday
+    for field, value in allowed.items():
+        new = float(value) if field in ("allowance_days", "carried_over_days") and value not in (None, "") else value
+        if field == "includes_bank_holidays":
+            new = bool(value)
+        old = getattr(row, field, None)
+        if old != new:
+            setattr(row, field, new)
+            record_audit(db, actor=actor, action="UPDATE", entity_type="employee_holiday",
+                         entity_id=emp.id, field=field, old=str(old), new=str(new), request=request)
+    db.commit()
+
+
 def composite(db: Session, emp: Employee, scopes: set[str]) -> dict:
     out = {"summary": summary(db, emp)}
     if perms.PERSONAL.readable_group_names(scopes):
@@ -185,6 +248,8 @@ def composite(db: Session, emp: Employee, scopes: set[str]) -> dict:
         out["role"] = role_view(db, emp, scopes)
     if perms.CONTRACT_DETAILS.readable_group_names(scopes):
         out["contractDetails"] = contract_details_view(emp, scopes)
+    if perms.HOLIDAY.readable_group_names(scopes):
+        out["holiday"] = holiday_view(emp, scopes)
     return out
 
 

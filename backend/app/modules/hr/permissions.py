@@ -51,5 +51,12 @@ CONTRACT_DETAILS = Projection([
           read={"self", "manager.team", "admin"}, write={"admin"}),
 ])
 
+# Holiday entitlement + balance — visible to self, team manager, admin; allowance set by admin.
+HOLIDAY = Projection([
+    group("holiday.core",
+          ["allowance_days", "carried_over_days", "includes_bank_holidays"],
+          read={"self", "manager.team", "admin"}, write={"admin"}),
+])
+
 # Summary card shown to self, the team manager, and admin.
 SUMMARY_READ = {"self", "manager.team", "admin"}

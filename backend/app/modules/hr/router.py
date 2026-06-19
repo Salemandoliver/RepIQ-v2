@@ -11,8 +11,14 @@ from ...core import rbac
 from ...core.audit import record_audit
 from ...db import get_db
 from ...models import User
+from . import imports as hr_imports
 from . import services as svc
 from .models import Employee, EmployeeEmergencyContact
+
+
+def _require_admin(user: User):
+    if rbac.platform_role(user) != rbac.ADMIN:
+        raise HTTPException(403, "Admin access required")
 
 router = APIRouter(prefix="/api/v1/hr", tags=["hr"])
 
@@ -177,6 +183,42 @@ def put_employee_contract_details(user_id: int, body: dict, request: Request,
     svc.update_contract_details(db, emp, body or {}, scopes, user, request)
     db.refresh(emp)
     return svc.contract_details_view(emp, scopes)
+
+
+@router.put("/employees/{user_id}/holiday")
+def put_employee_holiday(user_id: int, body: dict, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    svc.update_holiday(db, emp, body or {}, scopes, user, request)
+    db.refresh(emp)
+    return svc.holiday_view(emp, scopes)
+
+
+# ----------------------------------------------------------------- migration tooling (admin)
+@router.post("/import/safehr/preview")
+def safehr_preview(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    records = hr_imports.parse_staff_csv((body or {}).get("csv") or "")
+    if not records:
+        raise HTTPException(400, "No staff rows found — is this a SafeHR StaffDetails CSV export?")
+    return hr_imports.preview_import(db, records)
+
+
+@router.post("/import/safehr/apply")
+def safehr_apply(body: dict, request: Request,
+                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    records = hr_imports.parse_staff_csv((body or {}).get("csv") or "")
+    if not records:
+        raise HTTPException(400, "No staff rows found in the upload.")
+    return hr_imports.apply_import(db, records, user, request)
+
+
+@router.post("/import/holiday/sync")
+def holiday_sync(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    return hr_imports.sync_holiday_from_tracker(db, user, request)
 
 
 @router.post("/employees/{user_id}/emergency-contacts")

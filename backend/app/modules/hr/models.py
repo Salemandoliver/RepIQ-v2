@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.mixins import DomainBase
@@ -41,6 +41,10 @@ class Employee(DomainBase, Base):
                         cascade="all, delete-orphan")
     employment = relationship("EmployeeContract", uselist=False, back_populates="employee",
                               cascade="all, delete-orphan")
+    holiday = relationship("EmployeeHoliday", uselist=False, back_populates="employee",
+                           cascade="all, delete-orphan")
+    leave_records = relationship("LeaveRecord", back_populates="employee",
+                                 cascade="all, delete-orphan", order_by="LeaveRecord.leave_date")
 
 
 class EmployeePersonal(DomainBase, Base):
@@ -113,6 +117,35 @@ class EmployeeContract(DomainBase, Base):
     work_location: Mapped[str | None] = mapped_column(String(80), nullable=True)      # Office / Hybrid / Remote / site
 
     employee = relationship("Employee", back_populates="employment")
+
+
+class EmployeeHoliday(DomainBase, Base):
+    """Holiday entitlement (brief §12 — Holiday tab). Days taken come from LeaveRecord rows
+    (imported from the Holiday Tracker); the leave year is April–March."""
+    __tablename__ = "hr_employee_holiday"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), unique=True, index=True)
+    allowance_days: Mapped[float | None] = mapped_column(Float, nullable=True)        # annual entitlement
+    carried_over_days: Mapped[float | None] = mapped_column(Float, default=0.0)       # from prior year
+    includes_bank_holidays: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    employee = relationship("Employee", back_populates="holiday")
+
+
+class LeaveRecord(DomainBase, Base):
+    """A single day (or half-day) of absence (brief §12 — Holiday / Sick & absence).
+    Imported from the Holiday Tracker; ``source`` records provenance for idempotent re-sync."""
+    __tablename__ = "hr_leave_records"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    leave_date: Mapped[date] = mapped_column(Date, index=True)
+    portion: Mapped[float] = mapped_column(Float, default=1.0)                         # 1.0 full / 0.5 half
+    leave_type: Mapped[str] = mapped_column(String(40), default="Holiday")            # Holiday/Sick/Compassionate/Unpaid/Custom
+    code: Mapped[str | None] = mapped_column(String(10), nullable=True)               # raw tracker code
+    source: Mapped[str] = mapped_column(String(20), default="tracker")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    employee = relationship("Employee", back_populates="leave_records")
 
 
 class EmployeeEmergencyContact(DomainBase, Base):

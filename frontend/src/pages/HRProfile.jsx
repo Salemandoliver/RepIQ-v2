@@ -68,12 +68,11 @@ const SELECT_OPTIONS = {
 };
 const DATE_KEYS = new Set(["dob", "role_effective_date", "start_date", "continuous_service_date", "probation_end_date"]);
 // Endpoint + payload-source mapping for the editable sections.
-const SAVE_PATH = { personal: "personal", contact: "contact", role: "role", contract: "contract-details" };
+const SAVE_PATH = { personal: "personal", contact: "contact", role: "role", contract: "contract-details", holiday: "holiday" };
 
 // Sections that are part of the wider HR roadmap (brief §12) but not yet wired to data.
 // Shown so the profile reads as the full record and grows in place as each phase lands.
 const SOON_TABS = [
-  ["holiday", "Holiday", "Allowance, booked and remaining days, and requests."],
   ["absence", "Sick & absence", "Absence records, return-to-work and Bradford factor."],
   ["reviews", "Performance & reviews", "1-to-1s, probation and review cycles."],
   ["documents", "Documents", "Contracts, right-to-work and signed policies."],
@@ -177,6 +176,7 @@ export default function HRProfile() {
     if (data?.contact) t.push(["contact", "Contact"]);
     if (data?.role) t.push(["role", "Role"]);
     if (data?.contractDetails) t.push(["contract", "Contract"]);
+    if (data?.holiday) t.push(["holiday", "Holiday"]);
     if (data?.emergencyContacts !== undefined) t.push(["emergency", "Emergency contacts"]);
     if (canSeePay) t.push(["pay", "Pay"]);
     SOON_TABS.forEach(([k, label]) => t.push([k, label]));
@@ -197,6 +197,7 @@ export default function HRProfile() {
       which === "personal" ? Object.keys(PERSONAL_LABELS)
       : which === "contact" ? Object.keys(CONTACT_LABELS)
       : which === "role" ? ROLE_EDIT_FIELDS
+      : which === "holiday" ? ["allowance_days", "carried_over_days", "includes_bank_holidays"]
       : Object.keys(CONTRACT_LABELS);
     const d = {};
     editKeys.forEach((k) => { if (k in (source || {})) d[k] = source[k] ?? ""; });
@@ -364,6 +365,58 @@ export default function HRProfile() {
                 </div>
               </>
             ) : <FieldGrid data={data.contractDetails} labels={CONTRACT_LABELS} />}
+          </>
+        )}
+
+        {tab === "holiday" && data.holiday && (
+          <>
+            <div className="spread" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Holiday <span className="muted small" style={{ fontWeight: 400 }}>· leave year {data.holiday.leaveYear}</span></h3>
+              {me?.role === "admin" && editing !== "holiday" && (
+                <button className="btn btn-outline btn-sm" onClick={() => startEdit("holiday", data.holiday)}>Edit allowance</button>
+              )}
+            </div>
+            {editing === "holiday" ? (
+              <>
+                <div className="hr-field-grid">
+                  <div className="hr-field"><label className="hr-field-label">Annual allowance (days)</label>
+                    <input className="input" type="number" step="0.5" value={draft.allowance_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, allowance_days: e.target.value }))} /></div>
+                  <div className="hr-field"><label className="hr-field-label">Carried over (days)</label>
+                    <input className="input" type="number" step="0.5" value={draft.carried_over_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, carried_over_days: e.target.value }))} /></div>
+                  <div className="hr-field"><label className="hr-field-label">Includes bank holidays</label>
+                    <label className="flex" style={{ gap: 8 }}><input type="checkbox" checked={!!draft.includes_bank_holidays} onChange={(e) => setDraft((d) => ({ ...d, includes_bank_holidays: e.target.checked }))} /> <span className="small">Allowance includes bank holidays</span></label></div>
+                </div>
+                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="hr-stat-row">
+                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.entitlement ?? "—"}</div><div className="hr-stat-lbl">Entitlement</div></div>
+                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.takenHoliday ?? 0}</div><div className="hr-stat-lbl">Taken</div></div>
+                  <div className="hr-stat"><div className="hr-stat-num" style={{ color: (data.holiday.remaining ?? 0) < 0 ? "var(--red)" : "var(--green)" }}>{data.holiday.remaining ?? "—"}</div><div className="hr-stat-lbl">Remaining</div></div>
+                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.takenSick ?? 0}</div><div className="hr-stat-lbl">Sick days</div></div>
+                </div>
+                <div className="muted small" style={{ margin: "10px 0 4px" }}>
+                  Allowance {data.holiday.allowance_days ?? "—"} days{data.holiday.carried_over_days ? ` + ${data.holiday.carried_over_days} carried over` : ""}
+                  {data.holiday.includes_bank_holidays != null && ` · ${data.holiday.includes_bank_holidays ? "includes" : "excludes"} bank holidays`}
+                </div>
+                {(data.holiday.records || []).length > 0 ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="hr-field-label" style={{ marginBottom: 6 }}>This year's leave ({data.holiday.records.length} days)</div>
+                    <div className="hr-leave-list">
+                      {data.holiday.records.map((r, i) => (
+                        <span key={i} className={"hr-leave-pill " + (r.type === "Sick" ? "sick" : r.type === "Holiday" ? "hol" : "other")}>
+                          {fmtDate(r.date)}{r.portion === 0.5 ? " ½" : ""}{r.type !== "Holiday" ? ` · ${r.type}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : <div className="muted small" style={{ marginTop: 8 }}>No leave recorded this year. Run “Sync holiday from tracker” in Settings to import it.</div>}
+              </>
+            )}
           </>
         )}
 
