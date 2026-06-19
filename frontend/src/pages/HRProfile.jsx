@@ -1,65 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import api from "../api";
-import { Avatar, Spinner, EmptyState } from "../components/ui.jsx";
+import { Spinner, EmptyState } from "../components/ui.jsx";
 import { useToast } from "../components/Toast.jsx";
 
-// Labels for the fields the HR module currently exposes. Only fields the viewer is permitted
-// to see come back from the API, so we simply render whatever keys are present.
+/* HR employee profile — SafeHR-style layout: a full tab set, each tab laid out as content
+   sections with an Actions sidebar. Content is permission-projected by the API; unbuilt
+   sections show a placeholder and a few tabs are disabled until their phase lands. */
+
 const PERSONAL_LABELS = {
-  preferred_name: "Known as",
-  title: "Title",
-  first_name: "First name",
-  middle_name: "Middle name",
-  last_name: "Last name",
-  dob: "Date of birth",
-  sex: "Sex",
-  gender_identity: "Gender identity",
-  nationality: "Nationality",
-  ni_number: "NI number",
-  about: "About",
+  preferred_name: "Known as", title: "Title", first_name: "First name", middle_name: "Middle name",
+  last_name: "Last name", dob: "Date of birth", sex: "Sex", gender_identity: "Gender identity",
+  nationality: "Nationality", ni_number: "NI number", about: "About",
 };
 const CONTACT_LABELS = {
-  personal_email: "Personal email",
-  personal_mobile: "Personal mobile",
-  addr_line1: "Address line 1",
-  addr_line2: "Address line 2",
-  town: "Town / city",
-  county: "County",
-  postcode: "Postcode",
-  country: "Country",
-  preferred_contact_method: "Preferred contact",
-  work_email: "Work email",
-  work_phone: "Work phone",
+  personal_email: "Personal email", personal_mobile: "Personal mobile", addr_line1: "Address line 1",
+  addr_line2: "Address line 2", town: "Town / city", county: "County", postcode: "Postcode",
+  country: "Country", preferred_contact_method: "Preferred contact", work_email: "Work email", work_phone: "Work phone",
 };
-const EMERGENCY_LABELS = {
-  full_name: "Name",
-  relation: "Relationship",
-  phone_primary: "Primary phone",
-  phone_secondary: "Secondary phone",
-  email: "Email",
-  address: "Address",
-  notes: "Notes",
-};
-// Role: job_title + reports_to_name are read-only context; the editable set is below.
-const ROLE_VIEW_LABELS = {
-  job_title: "Job title",
-  reports_to_name: "Reports to",
-  department: "Department",
-  grade: "Grade / band",
-  role_effective_date: "In role since",
-};
+const ROLE_EDIT_LABELS = { reports_to: "Reports to", department: "Department", grade: "Grade / band", role_effective_date: "In role since" };
 const ROLE_EDIT_FIELDS = ["reports_to", "department", "grade", "role_effective_date"];
 const CONTRACT_LABELS = {
-  contract_type: "Contract type",
-  working_pattern: "Working pattern",
-  weekly_hours: "Weekly hours",
-  fte: "FTE",
-  start_date: "Start date",
-  continuous_service_date: "Continuous service date",
-  probation_end_date: "Probation ends",
-  notice_period: "Notice period",
-  work_location: "Work location",
+  contract_type: "Contract type", working_pattern: "Working pattern", weekly_hours: "Weekly hours",
+  fte: "FTE", start_date: "Start date", continuous_service_date: "Continuous service date",
+  probation_end_date: "Probation ends", notice_period: "Notice period", work_location: "Work location",
 };
 const SELECT_OPTIONS = {
   contract_type: ["Permanent", "Fixed-term", "Contractor", "Apprentice", "Zero-hours"],
@@ -67,41 +31,65 @@ const SELECT_OPTIONS = {
   work_location: ["Office", "Hybrid", "Remote"],
 };
 const DATE_KEYS = new Set(["dob", "role_effective_date", "start_date", "continuous_service_date", "probation_end_date"]);
-// Endpoint + payload-source mapping for the editable sections.
 const SAVE_PATH = { personal: "personal", contact: "contact", role: "role", contract: "contract-details", holiday: "holiday" };
 
-// Sections that are part of the wider HR roadmap (brief §12) but not yet wired to data.
-// Shown so the profile reads as the full record and grows in place as each phase lands.
-const SOON_TABS = [
-  ["absence", "Sick & absence", "Absence records, return-to-work and Bradford factor."],
-  ["reviews", "Performance & reviews", "1-to-1s, probation and review cycles."],
-  ["documents", "Documents", "Contracts, right-to-work and signed policies."],
-  ["assets", "Assets", "Company equipment issued to this person."],
-  ["training", "Training & qualifications", "Courses, certifications and renewals."],
+// Tab set + order mirrors SafeHR. `true` = disabled (greyed, not selectable) until that phase lands.
+const TABS = [
+  ["personal", "Personal Details"], ["role", "Role"], ["location", "Location"], ["contract", "Contract"],
+  ["pay", "Pay"], ["benefits", "Benefits"], ["hours", "Hours"], ["holiday", "Holiday"],
+  ["performance", "Performance"], ["assets", "Assets"], ["documents", "Documents"], ["feedback", "Feedback", true],
+  ["absence", "Sick & Absence"], ["training", "Training", true], ["qualifications", "Qualifications", true], ["goals", "Goals"],
 ];
+const SOON = {
+  location: "Work location and home address detail will expand in a later HR phase.",
+  benefits: "Benefits & perks (pension, healthcare, etc.) are part of a later HR phase.",
+  performance: "Performance reviews and 1-to-1s are part of a later HR phase.",
+  assets: "Company assets issued to this person will be listed here.",
+  documents: "Document storage (contracts, right-to-work) lands with secure file storage.",
+  goals: "Goals & objectives are part of a later HR phase.",
+};
+
+const Flower = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.4" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
+    <path d="M12 3v18M5 6.5l14 11M19 6.5l-14 11" />
+  </svg>
+);
 
 function fmtDate(v) {
   if (!v) return "—";
-  try {
-    const d = new Date(v);
-    if (!isNaN(d)) return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  } catch { /* ignore */ }
-  return v;
+  const d = new Date(v);
+  return isNaN(d) ? v : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
-function FieldGrid({ data, labels }) {
-  const keys = Object.keys(labels).filter((k) => k in (data || {}));
-  if (!keys.length) return <div className="muted small">No details recorded.</div>;
+function DL({ rows }) {
   return (
-    <div className="hr-field-grid">
-      {keys.map((k) => (
-        <div key={k} className="hr-field">
-          <div className="hr-field-label">{labels[k]}</div>
-          <div className="hr-field-value">
-            {DATE_KEYS.has(k) ? fmtDate(data[k]) : (data[k] != null && data[k] !== "" ? String(data[k]) : "—")}
-          </div>
-        </div>
+    <dl className="hr-dl">
+      {rows.map(([label, value], i) => (
+        <React.Fragment key={i}>
+          <dt>{label}</dt>
+          <dd>{(value || value === 0) ? value : "—"}</dd>
+        </React.Fragment>
       ))}
+    </dl>
+  );
+}
+
+function Section({ title, children }) {
+  return (<div className="hr-col"><h3 className="hr-sec-title">{title}</h3>{children}</div>);
+}
+
+function Actions({ items }) {
+  const real = (items || []).filter(Boolean);
+  if (!real.length) return null;
+  return (
+    <div className="hr-col">
+      <h3 className="hr-sec-title">Actions</h3>
+      <div className="hr-actions">
+        {real.map((a, i) => a.disabled
+          ? <span key={i} className="hr-action disabled" title="Coming in a later phase"><Flower /> {a.label}</span>
+          : <a key={i} className="hr-action" onClick={a.onClick}><Flower /> {a.label}</a>)}
+      </div>
     </div>
   );
 }
@@ -138,10 +126,6 @@ function EditGrid({ labels, draft, setDraft, userOptions }) {
   );
 }
 
-const ROLE_EDIT_LABELS = {
-  reports_to: "Reports to", department: "Department", grade: "Grade / band", role_effective_date: "In role since",
-};
-
 export default function HRProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -150,14 +134,15 @@ export default function HRProfile() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState("summary");
-  const [editing, setEditing] = useState(null);   // "personal" | "contact" | "role" | "contract" | null
+  const [tab, setTab] = useState("personal");
+  const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
-  const [userOptions, setUserOptions] = useState([]);   // for the "reports to" picker (admin)
+  const [userOptions, setUserOptions] = useState([]);
 
-  const canEdit = me && (me.role === "admin" || Number(me.id) === Number(id));
-  const canSeePay = me && (me.role === "admin" || (me.scopes || []).includes("financial"));
+  const isAdmin = me?.role === "admin";
+  const isSelf = Number(me?.id) === Number(id);
+  const canEdit = isAdmin || isSelf;
 
   const load = () => {
     setLoading(true);
@@ -168,31 +153,14 @@ export default function HRProfile() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
-  const s = data?.summary || {};
-
-  const tabs = useMemo(() => {
-    const t = [["summary", "Summary"]];
-    if (data?.personal) t.push(["personal", "Personal"]);
-    if (data?.contact) t.push(["contact", "Contact"]);
-    if (data?.role) t.push(["role", "Role"]);
-    if (data?.contractDetails) t.push(["contract", "Contract"]);
-    if (data?.holiday) t.push(["holiday", "Holiday"]);
-    if (data?.emergencyContacts !== undefined) t.push(["emergency", "Emergency contacts"]);
-    if (canSeePay) t.push(["pay", "Pay"]);
-    SOON_TABS.forEach(([k, label]) => t.push([k, label]));
-    return t;
-  }, [data, canSeePay]);
-
-  // The "reports to" picker (role edit, admin only) needs the user list. Load it lazily.
   const ensureUserOptions = () => {
-    if (userOptions.length || me?.role !== "admin") return;
+    if (userOptions.length || !isAdmin) return;
     api.get("/api/admin/users")
       .then((us) => setUserOptions((us || []).filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))))
       .catch(() => {});
   };
 
   const startEdit = (which, source) => {
-    // Build a draft of exactly the editable (present) fields for this section.
     const editKeys =
       which === "personal" ? Object.keys(PERSONAL_LABELS)
       : which === "contact" ? Object.keys(CONTACT_LABELS)
@@ -213,11 +181,8 @@ export default function HRProfile() {
       toast("Saved", "success");
       setEditing(null);
       load();
-    } catch (e) {
-      toast(e.message || "Could not save", "error");
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { toast(e.message || "Could not save", "error"); }
+    finally { setSaving(false); }
   };
 
   const addEmergency = async () => {
@@ -227,233 +192,234 @@ export default function HRProfile() {
     const phone_primary = window.prompt("Phone number?") || "";
     try {
       await api.post(`/api/v1/hr/employees/${id}/emergency-contacts`, { full_name, relation, phone_primary });
-      toast("Emergency contact added", "success");
-      load();
+      toast("Emergency contact added", "success"); load();
     } catch (e) { toast(e.message || "Could not add", "error"); }
   };
-
   const removeEmergency = async (ecId) => {
     if (!window.confirm("Remove this emergency contact?")) return;
-    try {
-      await api.del(`/api/v1/hr/employees/${id}/emergency-contacts/${ecId}`);
-      toast("Removed", "success");
-      load();
-    } catch (e) { toast(e.message || "Could not remove", "error"); }
+    try { await api.del(`/api/v1/hr/employees/${id}/emergency-contacts/${ecId}`); toast("Removed", "success"); load(); }
+    catch (e) { toast(e.message || "Could not remove", "error"); }
   };
 
-  if (loading) return <div className="page"><Spinner /></div>;
+  if (loading) return <div className="hr-profile"><Spinner /></div>;
   if (error) return (
-    <div className="page">
+    <div className="hr-profile">
       <button className="btn btn-outline btn-sm" onClick={() => navigate("/people")}>← Back to People</button>
       <div style={{ marginTop: 20 }}><EmptyState icon="🔒" title="Can't show this profile" sub={error} /></div>
     </div>
   );
 
-  return (
-    <div className="page hr-profile">
-      <button className="btn btn-ghost btn-sm" style={{ marginBottom: 14 }} onClick={() => navigate("/people")}>← People</button>
+  const s = data.summary || {};
+  const p = data.personal || {};
+  const c = data.contact || {};
+  const ecs = data.emergencyContacts || [];
+  const cd = data.contractDetails || {};
+  const role = data.role || {};
+  const hol = data.holiday;
 
-      <div className="hr-profile-header card">
-        <Avatar name={s.name} color={s.avatarColor} size={72} photo={s.photo} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: "0 0 2px" }}>{s.knownAs || s.name}</h2>
-          {s.knownAs && s.knownAs !== s.name && <div className="muted" style={{ marginTop: -2 }}>{s.name}</div>}
-          <div className="hr-chips">
-            {s.jobTitle && <span className="chip">{s.jobTitle}</span>}
-            {s.platformRole && <span className="chip chip-role">{s.platformRole}</span>}
-            {s.status && <span className={"chip " + (s.status === "active" ? "chip-ok" : "chip-muted")}>{s.status}</span>}
-            {s.employeeCode && <span className="chip chip-muted">#{s.employeeCode}</span>}
+  const SaveBar = () => (
+    <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+      <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+    </div>
+  );
+
+  const homeAddress = () => {
+    const lines = [c.addr_line1, c.addr_line2, [c.town, c.postcode].filter(Boolean).join(", "), c.country].filter(Boolean);
+    return lines.length ? <span style={{ whiteSpace: "pre-line" }}>{lines.join("\n")}</span> : "—";
+  };
+
+  function renderTab() {
+    // Disabled / unbuilt tabs
+    if (SOON[tab]) return <div className="hr-cols"><div className="hr-col"><EmptyState icon="🚧" title={`${TABS.find(([k]) => k === tab)[1]} — coming soon`} sub={SOON[tab]} /></div></div>;
+
+    if (tab === "personal") {
+      if (editing === "personal") return <div className="hr-edit"><h3 className="hr-sec-title">Edit personal details</h3><EditGrid labels={PERSONAL_LABELS} draft={draft} setDraft={setDraft} /><SaveBar /></div>;
+      if (editing === "contact") return <div className="hr-edit"><h3 className="hr-sec-title">Edit contact details</h3><EditGrid labels={CONTACT_LABELS} draft={draft} setDraft={setDraft} /><SaveBar /></div>;
+      const ec = ecs[0];
+      return (
+        <div className="hr-cols">
+          <div className="hr-col">
+            <h3 className="hr-sec-title">Personal details</h3>
+            <DL rows={[["Sex", p.sex], ["Date of birth", p.dob ? fmtDate(p.dob) : null]]} />
+            <h3 className="hr-sec-title" style={{ marginTop: 26 }}>Contact details</h3>
+            <DL rows={[["Name", s.name], ["Title", p.title], ["Work email", c.work_email || s.email],
+              ["Work telephone", c.work_phone], ["Personal email", c.personal_email],
+              ["Personal mobile", c.personal_mobile], ["Home address", homeAddress()]]} />
           </div>
+          <Section title="Emergency contact">
+            {ec ? (
+              <>
+                <DL rows={[["Name", ec.full_name], ["Relationship", ec.relation], ["Email", ec.email],
+                  ["Phone", ec.phone_primary], ["Mobile", ec.phone_secondary],
+                  ["Address", ec.address ? <span style={{ whiteSpace: "pre-line" }}>{ec.address.replace(/, /g, "\n")}</span> : null]]} />
+                {canEdit && ecs.length > 1 && <div className="muted small" style={{ marginTop: 8 }}>+{ecs.length - 1} more on file</div>}
+                {canEdit && <a className="hr-action" style={{ marginTop: 10 }} onClick={() => removeEmergency(ec.id)}><Flower /> Remove this contact</a>}
+              </>
+            ) : <div className="muted small">No emergency contact on file.</div>}
+          </Section>
+          <Actions items={canEdit ? [
+            { label: "Edit personal details", onClick: () => startEdit("personal", p) },
+            { label: "Edit contact details", onClick: () => startEdit("contact", c) },
+            { label: "Add emergency contact", onClick: addEmergency },
+            isSelf && { label: "Edit employee photo", onClick: () => navigate("/account") },
+            { label: "Edit about me", onClick: () => startEdit("personal", p) },
+          ].filter(Boolean) : []} />
         </div>
-      </div>
+      );
+    }
 
-      <div className="hr-tabs">
-        {tabs.map(([k, label]) => (
-          <button key={k} className={"hr-tab" + (tab === k ? " active" : "")} onClick={() => { setTab(k); setEditing(null); }}>
-            {label}
-          </button>
-        ))}
-      </div>
+    if (tab === "role") {
+      if (editing === "role") return <div className="hr-edit"><h3 className="hr-sec-title">Edit role</h3><EditGrid labels={ROLE_EDIT_LABELS} draft={draft} setDraft={setDraft} userOptions={userOptions} /><div className="muted small" style={{ marginTop: 8 }}>Job title is set on the People record.</div><SaveBar /></div>;
+      return (
+        <div className="hr-cols">
+          <Section title="Job information">
+            <DL rows={[["Job title", role.job_title || s.jobTitle], ["Department", role.department],
+              ["Grade / band", role.grade], ["In role since", role.role_effective_date ? fmtDate(role.role_effective_date) : null]]} />
+          </Section>
+          <Section title="Management">
+            <DL rows={[["Reports to", role.reports_to_name]]} />
+          </Section>
+          <Actions items={isAdmin ? [{ label: "View / edit role", onClick: () => startEdit("role", role) }] : []} />
+        </div>
+      );
+    }
 
-      <div className="card hr-panel">
-        {tab === "summary" && (
-          <div className="hr-field-grid">
-            <div className="hr-field"><div className="hr-field-label">Full name</div><div className="hr-field-value">{s.name || "—"}</div></div>
-            <div className="hr-field"><div className="hr-field-label">Known as</div><div className="hr-field-value">{s.preferredName || "—"}</div></div>
-            <div className="hr-field"><div className="hr-field-label">Work email</div><div className="hr-field-value">{s.email || "—"}</div></div>
-            <div className="hr-field"><div className="hr-field-label">Job title</div><div className="hr-field-value">{s.jobTitle || "—"}</div></div>
-            <div className="hr-field"><div className="hr-field-label">Start date</div><div className="hr-field-value">{fmtDate(s.startDate)}</div></div>
-            <div className="hr-field"><div className="hr-field-label">Status</div><div className="hr-field-value" style={{ textTransform: "capitalize" }}>{s.status || "—"}</div></div>
+    if (tab === "location") {
+      return (
+        <div className="hr-cols">
+          <Section title="Work location"><DL rows={[["Location", cd.work_location], ["Working pattern", cd.working_pattern]]} /></Section>
+          <Section title="Home address"><DL rows={[["Address", homeAddress()]]} /></Section>
+          <Actions items={isAdmin ? [{ label: "Edit work location", onClick: () => { setTab("contract"); startEdit("contract", cd); } },
+            { label: "Edit home address", onClick: () => startEdit("contact", c) }] : []} />
+        </div>
+      );
+    }
+
+    if (tab === "contract" || tab === "hours") {
+      if (editing === "contract") return <div className="hr-edit"><h3 className="hr-sec-title">Edit contract</h3><EditGrid labels={CONTRACT_LABELS} draft={draft} setDraft={setDraft} /><SaveBar /></div>;
+      if (tab === "hours") {
+        return (
+          <div className="hr-cols">
+            <Section title="Working hours"><DL rows={[["Working pattern", cd.working_pattern], ["Weekly hours", cd.weekly_hours], ["FTE", cd.fte]]} /></Section>
+            <Section title="Pattern"><DL rows={[["Contract type", cd.contract_type], ["Location", cd.work_location]]} /></Section>
+            <Actions items={isAdmin ? [{ label: "Edit hours", onClick: () => startEdit("contract", cd) }] : []} />
           </div>
-        )}
+        );
+      }
+      return (
+        <div className="hr-cols">
+          <Section title="Contract">
+            <DL rows={[["Contract type", cd.contract_type], ["Working pattern", cd.working_pattern],
+              ["Notice period", cd.notice_period], ["Work location", cd.work_location]]} />
+          </Section>
+          <Section title="Key dates">
+            <DL rows={[["Start date", cd.start_date ? fmtDate(cd.start_date) : null],
+              ["Continuous service", cd.continuous_service_date ? fmtDate(cd.continuous_service_date) : null],
+              ["Probation ends", cd.probation_end_date ? fmtDate(cd.probation_end_date) : null]]} />
+          </Section>
+          <Actions items={isAdmin ? [{ label: "View / edit contract", onClick: () => startEdit("contract", cd) }] : []} />
+        </div>
+      );
+    }
 
-        {tab === "personal" && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Personal details</h3>
-              {canEdit && editing !== "personal" && (
-                <button className="btn btn-outline btn-sm" onClick={() => startEdit("personal", data.personal)}>Edit</button>
-              )}
+    if (tab === "holiday") {
+      if (!hol) return <div className="hr-cols"><div className="hr-col"><EmptyState icon="🏖️" title="No holiday data" /></div></div>;
+      if (editing === "holiday") return (
+        <div className="hr-edit"><h3 className="hr-sec-title">Edit holiday allowance</h3>
+          <div className="hr-field-grid">
+            <div className="hr-field"><label className="hr-field-label">Annual allowance (days)</label>
+              <input className="input" type="number" step="0.5" value={draft.allowance_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, allowance_days: e.target.value }))} /></div>
+            <div className="hr-field"><label className="hr-field-label">Carried over (days)</label>
+              <input className="input" type="number" step="0.5" value={draft.carried_over_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, carried_over_days: e.target.value }))} /></div>
+            <div className="hr-field"><label className="hr-field-label">Includes bank holidays</label>
+              <label className="flex" style={{ gap: 8 }}><input type="checkbox" checked={!!draft.includes_bank_holidays} onChange={(e) => setDraft((d) => ({ ...d, includes_bank_holidays: e.target.checked }))} /> <span className="small">Allowance includes bank holidays</span></label></div>
+          </div><SaveBar />
+        </div>
+      );
+      return (
+        <div className="hr-cols">
+          <div className="hr-col" style={{ gridColumn: "span 2" }}>
+            <h3 className="hr-sec-title">Holiday <span className="muted small" style={{ fontWeight: 400 }}>· leave year {hol.leaveYear}</span></h3>
+            <div className="hr-stat-row">
+              <div className="hr-stat"><div className="hr-stat-num">{hol.entitlement ?? "—"}</div><div className="hr-stat-lbl">Entitlement</div></div>
+              <div className="hr-stat"><div className="hr-stat-num">{hol.takenHoliday ?? 0}</div><div className="hr-stat-lbl">Taken</div></div>
+              <div className="hr-stat"><div className="hr-stat-num" style={{ color: (hol.remaining ?? 0) < 0 ? "var(--red)" : "var(--green)" }}>{hol.remaining ?? "—"}</div><div className="hr-stat-lbl">Remaining</div></div>
+              <div className="hr-stat"><div className="hr-stat-num">{hol.takenSick ?? 0}</div><div className="hr-stat-lbl">Sick days</div></div>
             </div>
-            {editing === "personal" ? (
-              <>
-                <EditGrid labels={PERSONAL_LABELS} draft={draft} setDraft={setDraft} />
-                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                </div>
-              </>
-            ) : <FieldGrid data={data.personal} labels={PERSONAL_LABELS} />}
-          </>
-        )}
-
-        {tab === "contact" && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Contact details</h3>
-              {canEdit && editing !== "contact" && (
-                <button className="btn btn-outline btn-sm" onClick={() => startEdit("contact", data.contact)}>Edit</button>
-              )}
+            <div className="muted small" style={{ margin: "12px 0 4px" }}>
+              Allowance {hol.allowance_days ?? "—"} days{hol.carried_over_days ? ` + ${hol.carried_over_days} carried over` : ""}
+              {hol.includes_bank_holidays != null && ` · ${hol.includes_bank_holidays ? "includes" : "excludes"} bank holidays`}
             </div>
-            {editing === "contact" ? (
-              <>
-                <EditGrid labels={CONTACT_LABELS} draft={draft} setDraft={setDraft} />
-                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                </div>
-              </>
-            ) : <FieldGrid data={data.contact} labels={CONTACT_LABELS} />}
-          </>
-        )}
-
-        {tab === "role" && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Role</h3>
-              {me?.role === "admin" && editing !== "role" && (
-                <button className="btn btn-outline btn-sm" onClick={() => startEdit("role", data.role)}>Edit</button>
-              )}
-            </div>
-            {editing === "role" ? (
-              <>
-                <EditGrid labels={ROLE_EDIT_LABELS} draft={draft} setDraft={setDraft} userOptions={userOptions} />
-                <div className="muted small" style={{ marginTop: 8 }}>Job title is set on the People record.</div>
-                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                </div>
-              </>
-            ) : <FieldGrid data={data.role} labels={ROLE_VIEW_LABELS} />}
-          </>
-        )}
-
-        {tab === "contract" && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Contract</h3>
-              {me?.role === "admin" && editing !== "contract" && (
-                <button className="btn btn-outline btn-sm" onClick={() => startEdit("contract", data.contractDetails)}>Edit</button>
-              )}
-            </div>
-            {editing === "contract" ? (
-              <>
-                <EditGrid labels={CONTRACT_LABELS} draft={draft} setDraft={setDraft} />
-                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                </div>
-              </>
-            ) : <FieldGrid data={data.contractDetails} labels={CONTRACT_LABELS} />}
-          </>
-        )}
-
-        {tab === "holiday" && data.holiday && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Holiday <span className="muted small" style={{ fontWeight: 400 }}>· leave year {data.holiday.leaveYear}</span></h3>
-              {me?.role === "admin" && editing !== "holiday" && (
-                <button className="btn btn-outline btn-sm" onClick={() => startEdit("holiday", data.holiday)}>Edit allowance</button>
-              )}
-            </div>
-            {editing === "holiday" ? (
-              <>
-                <div className="hr-field-grid">
-                  <div className="hr-field"><label className="hr-field-label">Annual allowance (days)</label>
-                    <input className="input" type="number" step="0.5" value={draft.allowance_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, allowance_days: e.target.value }))} /></div>
-                  <div className="hr-field"><label className="hr-field-label">Carried over (days)</label>
-                    <input className="input" type="number" step="0.5" value={draft.carried_over_days ?? ""} onChange={(e) => setDraft((d) => ({ ...d, carried_over_days: e.target.value }))} /></div>
-                  <div className="hr-field"><label className="hr-field-label">Includes bank holidays</label>
-                    <label className="flex" style={{ gap: 8 }}><input type="checkbox" checked={!!draft.includes_bank_holidays} onChange={(e) => setDraft((d) => ({ ...d, includes_bank_holidays: e.target.checked }))} /> <span className="small">Allowance includes bank holidays</span></label></div>
-                </div>
-                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="hr-stat-row">
-                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.entitlement ?? "—"}</div><div className="hr-stat-lbl">Entitlement</div></div>
-                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.takenHoliday ?? 0}</div><div className="hr-stat-lbl">Taken</div></div>
-                  <div className="hr-stat"><div className="hr-stat-num" style={{ color: (data.holiday.remaining ?? 0) < 0 ? "var(--red)" : "var(--green)" }}>{data.holiday.remaining ?? "—"}</div><div className="hr-stat-lbl">Remaining</div></div>
-                  <div className="hr-stat"><div className="hr-stat-num">{data.holiday.takenSick ?? 0}</div><div className="hr-stat-lbl">Sick days</div></div>
-                </div>
-                <div className="muted small" style={{ margin: "10px 0 4px" }}>
-                  Allowance {data.holiday.allowance_days ?? "—"} days{data.holiday.carried_over_days ? ` + ${data.holiday.carried_over_days} carried over` : ""}
-                  {data.holiday.includes_bank_holidays != null && ` · ${data.holiday.includes_bank_holidays ? "includes" : "excludes"} bank holidays`}
-                </div>
-                {(data.holiday.records || []).length > 0 ? (
-                  <div style={{ marginTop: 10 }}>
-                    <div className="hr-field-label" style={{ marginBottom: 6 }}>This year's leave ({data.holiday.records.length} days)</div>
-                    <div className="hr-leave-list">
-                      {data.holiday.records.map((r, i) => (
-                        <span key={i} className={"hr-leave-pill " + (r.type === "Sick" ? "sick" : r.type === "Holiday" ? "hol" : "other")}>
-                          {fmtDate(r.date)}{r.portion === 0.5 ? " ½" : ""}{r.type !== "Holiday" ? ` · ${r.type}` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : <div className="muted small" style={{ marginTop: 8 }}>No leave recorded this year. Run “Sync holiday from tracker” in Settings to import it.</div>}
-              </>
-            )}
-          </>
-        )}
-
-        {tab === "emergency" && (
-          <>
-            <div className="spread" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Emergency contacts</h3>
-              {canEdit && <button className="btn btn-outline btn-sm" onClick={addEmergency}>Add</button>}
-            </div>
-            {(data.emergencyContacts || []).length === 0 ? (
-              <EmptyState icon="🆘" title="No emergency contacts" sub="Add a next of kin in case of emergency." />
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {data.emergencyContacts.map((ec) => (
-                  <div key={ec.id} className="hr-ec-card">
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{ec.full_name} {ec.relation && <span className="muted">· {ec.relation}</span>}</div>
-                      <div className="small">{[ec.phone_primary, ec.phone_secondary, ec.email].filter(Boolean).join(" · ") || "—"}</div>
-                      {ec.address && <div className="small muted">{ec.address}</div>}
-                    </div>
-                    {canEdit && <button className="btn btn-ghost btn-sm" onClick={() => removeEmergency(ec.id)}>Remove</button>}
-                  </div>
+            {(hol.records || []).length > 0 && (
+              <div className="hr-leave-list" style={{ marginTop: 8 }}>
+                {hol.records.map((r, i) => (
+                  <span key={i} className={"hr-leave-pill " + (r.type === "Sick" ? "sick" : r.type === "Holiday" ? "hol" : "other")}>
+                    {fmtDate(r.date)}{r.portion === 0.5 ? " ½" : ""}{r.type !== "Holiday" ? ` · ${r.type}` : ""}
+                  </span>
                 ))}
               </div>
             )}
-          </>
-        )}
+          </div>
+          <Actions items={isAdmin ? [{ label: "Edit allowance", onClick: () => startEdit("holiday", hol) }] : []} />
+        </div>
+      );
+    }
 
-        {tab === "pay" && (
-          <EmptyState icon="💷" title="Pay & financial"
-            sub="Salary, pay history and bank details land in a later HR phase. This tab is visible to you because you hold the financial scope." />
-        )}
+    if (tab === "absence") {
+      const recs = hol?.records || [];
+      const sick = recs.filter((r) => r.type === "Sick");
+      const sickDays = hol?.takenSick ?? 0;
+      const otherAbs = recs.filter((r) => r.type !== "Holiday" && r.type !== "Sick");
+      const name = s.knownAs || (s.name || "This person").split(" ")[0];
+      return (
+        <div className="hr-cols">
+          <Section title="Absence">
+            <p style={{ marginTop: 0 }}>{name} has {otherAbs.length ? `${otherAbs.reduce((a, r) => a + (r.portion || 1), 0)} day(s) of other leave` : "no non-holiday absence"} this leave year.</p>
+            <p className="muted small">Holiday taken: {hol?.takenHoliday ?? 0} day(s).</p>
+          </Section>
+          <Section title="Sickness">
+            <p style={{ marginTop: 0 }}>{name} has been off sick {sick.length} time{sick.length === 1 ? "" : "s"} for a total of {sickDays} day{sickDays === 1 ? "" : "s"} this leave year.</p>
+          </Section>
+          <Actions items={[
+            { label: "Record sickness / absence", disabled: true },
+            { label: "View sickness / absence", disabled: true },
+            { label: "Record an appointment", disabled: true },
+          ]} />
+        </div>
+      );
+    }
 
-        {SOON_TABS.some(([k]) => k === tab) && (() => {
-          const meta = SOON_TABS.find(([k]) => k === tab);
-          return <EmptyState icon="🚧" title={`${meta[1]} — coming soon`} sub={meta[2]} />;
-        })()}
+    if (tab === "pay") {
+      const canSeePay = isAdmin || (me?.scopes || []).includes("financial");
+      return <div className="hr-cols"><div className="hr-col">
+        <EmptyState icon="💷" title="Pay & financial"
+          sub={canSeePay ? "Salary, pay history and bank details land in the financial Pay phase (encrypted, admin-only)." : "Pay information is restricted."} />
+      </div></div>;
+    }
+
+    return <div className="hr-cols"><div className="hr-col"><EmptyState icon="🚧" title="Coming soon" /></div></div>;
+  }
+
+  return (
+    <div className="hr-profile">
+      <button className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }} onClick={() => navigate("/people")}>← People</button>
+      <div className="hr-card">
+        <div className="hr-head"><Flower size={20} /> Personal information for {s.name || s.knownAs}</div>
+        <div className="hr-subhead">
+          {[s.jobTitle, s.teamId ? null : null, s.status].filter(Boolean).join(" · ")}
+          {s.knownAs && s.knownAs !== s.name ? ` · known as ${s.knownAs}` : ""}
+        </div>
+        <div className="hr-tabgrid">
+          {TABS.map(([k, label, disabled]) => (
+            <button key={k} disabled={disabled}
+              className={"hr-tab" + (tab === k ? " active" : "") + (disabled ? " disabled" : "")}
+              onClick={() => { if (!disabled) { setTab(k); setEditing(null); } }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="hr-body">{renderTab()}</div>
       </div>
     </div>
   );

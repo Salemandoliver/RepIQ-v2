@@ -1,0 +1,14 @@
+# Normalise line endings so Windows checkouts don't trigger CRLF warnings and the
+# Linux Docker build always sees LF. Binary assets are left untouched.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.xlsx binary
+*.docx binary
