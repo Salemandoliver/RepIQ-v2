@@ -35,5 +35,21 @@ EMERGENCY = Projection([
           read={"self", "admin"}, write={"self", "admin"}),
 ])
 
+# Role / position — visible to self, the team manager, and admin; changed by admin only.
+# ``reports_to`` is a virtual field (it maps to Employee.reports_to_id, handled in services).
+ROLE = Projection([
+    group("role.core",
+          ["department", "grade", "role_effective_date", "reports_to"],
+          read={"self", "manager.team", "admin"}, write={"admin"}),
+])
+
+# Employment contract — same visibility; changed by admin only.
+CONTRACT_DETAILS = Projection([
+    group("contract.core",
+          ["contract_type", "working_pattern", "weekly_hours", "fte", "start_date",
+           "continuous_service_date", "probation_end_date", "notice_period", "work_location"],
+          read={"self", "manager.team", "admin"}, write={"admin"}),
+])
+
 # Summary card shown to self, the team manager, and admin.
 SUMMARY_READ = {"self", "manager.team", "admin"}

@@ -41,12 +41,38 @@ const EMERGENCY_LABELS = {
   address: "Address",
   notes: "Notes",
 };
+// Role: job_title + reports_to_name are read-only context; the editable set is below.
+const ROLE_VIEW_LABELS = {
+  job_title: "Job title",
+  reports_to_name: "Reports to",
+  department: "Department",
+  grade: "Grade / band",
+  role_effective_date: "In role since",
+};
+const ROLE_EDIT_FIELDS = ["reports_to", "department", "grade", "role_effective_date"];
+const CONTRACT_LABELS = {
+  contract_type: "Contract type",
+  working_pattern: "Working pattern",
+  weekly_hours: "Weekly hours",
+  fte: "FTE",
+  start_date: "Start date",
+  continuous_service_date: "Continuous service date",
+  probation_end_date: "Probation ends",
+  notice_period: "Notice period",
+  work_location: "Work location",
+};
+const SELECT_OPTIONS = {
+  contract_type: ["Permanent", "Fixed-term", "Contractor", "Apprentice", "Zero-hours"],
+  working_pattern: ["Full-time", "Part-time"],
+  work_location: ["Office", "Hybrid", "Remote"],
+};
+const DATE_KEYS = new Set(["dob", "role_effective_date", "start_date", "continuous_service_date", "probation_end_date"]);
+// Endpoint + payload-source mapping for the editable sections.
+const SAVE_PATH = { personal: "personal", contact: "contact", role: "role", contract: "contract-details" };
 
 // Sections that are part of the wider HR roadmap (brief §12) but not yet wired to data.
 // Shown so the profile reads as the full record and grows in place as each phase lands.
 const SOON_TABS = [
-  ["role", "Role", "Job title history, manager, department and role changes."],
-  ["contract", "Contract", "Contract type, start date, notice period and working pattern."],
   ["holiday", "Holiday", "Allowance, booked and remaining days, and requests."],
   ["absence", "Sick & absence", "Absence records, return-to-work and Bradford factor."],
   ["reviews", "Performance & reviews", "1-to-1s, probation and review cycles."],
@@ -73,7 +99,7 @@ function FieldGrid({ data, labels }) {
         <div key={k} className="hr-field">
           <div className="hr-field-label">{labels[k]}</div>
           <div className="hr-field-value">
-            {k === "dob" ? fmtDate(data[k]) : (data[k] != null && data[k] !== "" ? String(data[k]) : "—")}
+            {DATE_KEYS.has(k) ? fmtDate(data[k]) : (data[k] != null && data[k] !== "" ? String(data[k]) : "—")}
           </div>
         </div>
       ))}
@@ -81,7 +107,7 @@ function FieldGrid({ data, labels }) {
   );
 }
 
-function EditGrid({ labels, draft, setDraft }) {
+function EditGrid({ labels, draft, setDraft, userOptions }) {
   const keys = Object.keys(labels).filter((k) => k in draft);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
   return (
@@ -91,8 +117,20 @@ function EditGrid({ labels, draft, setDraft }) {
           <label className="hr-field-label" htmlFor={`f-${k}`}>{labels[k]}</label>
           {k === "about" ? (
             <textarea id={`f-${k}`} className="input" rows={3} value={draft[k] || ""} onChange={(e) => set(k, e.target.value)} />
+          ) : k === "reports_to" ? (
+            <select id={`f-${k}`} className="input" value={draft[k] ?? ""} onChange={(e) => set(k, e.target.value || null)}>
+              <option value="">— none —</option>
+              {(userOptions || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          ) : SELECT_OPTIONS[k] ? (
+            <select id={`f-${k}`} className="input" value={draft[k] || ""} onChange={(e) => set(k, e.target.value)}>
+              <option value="">—</option>
+              {SELECT_OPTIONS[k].map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
           ) : (
-            <input id={`f-${k}`} className="input" type={k === "dob" ? "date" : "text"}
+            <input id={`f-${k}`} className="input"
+              type={DATE_KEYS.has(k) ? "date" : (k === "weekly_hours" || k === "fte" ? "number" : "text")}
+              step={k === "fte" ? "0.1" : undefined}
               value={(draft[k] ?? "") === null ? "" : (draft[k] || "")} onChange={(e) => set(k, e.target.value)} />
           )}
         </div>
@@ -100,6 +138,10 @@ function EditGrid({ labels, draft, setDraft }) {
     </div>
   );
 }
+
+const ROLE_EDIT_LABELS = {
+  reports_to: "Reports to", department: "Department", grade: "Grade / band", role_effective_date: "In role since",
+};
 
 export default function HRProfile() {
   const { id } = useParams();
@@ -110,9 +152,10 @@ export default function HRProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("summary");
-  const [editing, setEditing] = useState(null);   // "personal" | "contact" | null
+  const [editing, setEditing] = useState(null);   // "personal" | "contact" | "role" | "contract" | null
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [userOptions, setUserOptions] = useState([]);   // for the "reports to" picker (admin)
 
   const canEdit = me && (me.role === "admin" || Number(me.id) === Number(id));
   const canSeePay = me && (me.role === "admin" || (me.scopes || []).includes("financial"));
@@ -132,17 +175,32 @@ export default function HRProfile() {
     const t = [["summary", "Summary"]];
     if (data?.personal) t.push(["personal", "Personal"]);
     if (data?.contact) t.push(["contact", "Contact"]);
+    if (data?.role) t.push(["role", "Role"]);
+    if (data?.contractDetails) t.push(["contract", "Contract"]);
     if (data?.emergencyContacts !== undefined) t.push(["emergency", "Emergency contacts"]);
     if (canSeePay) t.push(["pay", "Pay"]);
     SOON_TABS.forEach(([k, label]) => t.push([k, label]));
     return t;
   }, [data, canSeePay]);
 
+  // The "reports to" picker (role edit, admin only) needs the user list. Load it lazily.
+  const ensureUserOptions = () => {
+    if (userOptions.length || me?.role !== "admin") return;
+    api.get("/api/admin/users")
+      .then((us) => setUserOptions((us || []).filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))))
+      .catch(() => {});
+  };
+
   const startEdit = (which, source) => {
-    // Build a draft of exactly the editable (present) fields.
-    const labels = which === "personal" ? PERSONAL_LABELS : CONTACT_LABELS;
+    // Build a draft of exactly the editable (present) fields for this section.
+    const editKeys =
+      which === "personal" ? Object.keys(PERSONAL_LABELS)
+      : which === "contact" ? Object.keys(CONTACT_LABELS)
+      : which === "role" ? ROLE_EDIT_FIELDS
+      : Object.keys(CONTRACT_LABELS);
     const d = {};
-    Object.keys(labels).forEach((k) => { if (k in (source || {})) d[k] = source[k] ?? ""; });
+    editKeys.forEach((k) => { if (k in (source || {})) d[k] = source[k] ?? ""; });
+    if (which === "role") { ensureUserOptions(); if (!("reports_to" in d)) d.reports_to = source?.reports_to ?? ""; }
     setDraft(d);
     setEditing(which);
   };
@@ -150,8 +208,7 @@ export default function HRProfile() {
   const save = async () => {
     setSaving(true);
     try {
-      const path = editing === "personal" ? "personal" : "contact";
-      await api.put(`/api/v1/hr/employees/${id}/${path}`, draft);
+      await api.put(`/api/v1/hr/employees/${id}/${SAVE_PATH[editing]}`, draft);
       toast("Saved", "success");
       setEditing(null);
       load();
@@ -266,6 +323,47 @@ export default function HRProfile() {
                 </div>
               </>
             ) : <FieldGrid data={data.contact} labels={CONTACT_LABELS} />}
+          </>
+        )}
+
+        {tab === "role" && (
+          <>
+            <div className="spread" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Role</h3>
+              {me?.role === "admin" && editing !== "role" && (
+                <button className="btn btn-outline btn-sm" onClick={() => startEdit("role", data.role)}>Edit</button>
+              )}
+            </div>
+            {editing === "role" ? (
+              <>
+                <EditGrid labels={ROLE_EDIT_LABELS} draft={draft} setDraft={setDraft} userOptions={userOptions} />
+                <div className="muted small" style={{ marginTop: 8 }}>Job title is set on the People record.</div>
+                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                </div>
+              </>
+            ) : <FieldGrid data={data.role} labels={ROLE_VIEW_LABELS} />}
+          </>
+        )}
+
+        {tab === "contract" && (
+          <>
+            <div className="spread" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Contract</h3>
+              {me?.role === "admin" && editing !== "contract" && (
+                <button className="btn btn-outline btn-sm" onClick={() => startEdit("contract", data.contractDetails)}>Edit</button>
+              )}
+            </div>
+            {editing === "contract" ? (
+              <>
+                <EditGrid labels={CONTRACT_LABELS} draft={draft} setDraft={setDraft} />
+                <div className="flex" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                </div>
+              </>
+            ) : <FieldGrid data={data.contractDetails} labels={CONTRACT_LABELS} />}
           </>
         )}
 

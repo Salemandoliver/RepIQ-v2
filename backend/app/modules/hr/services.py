@@ -9,7 +9,8 @@ from ...core import rbac
 from ...core.audit import record_audit
 from ...models import User
 from . import permissions as perms
-from .models import Employee, EmployeeContact, EmployeeEmergencyContact, EmployeePersonal
+from .models import (Employee, EmployeeContact, EmployeeContract, EmployeeEmergencyContact,
+                     EmployeePersonal, EmployeeRole)
 
 _PERSONAL_FIELDS = ["preferred_name", "profile_photo", "title", "first_name", "middle_name",
                     "last_name", "dob", "sex", "gender_identity", "nationality", "about", "ni_number"]
@@ -17,6 +18,11 @@ _CONTACT_FIELDS = ["personal_email", "personal_mobile", "addr_line1", "addr_line
                    "county", "postcode", "country", "preferred_contact_method", "work_email", "work_phone"]
 _EMERGENCY_FIELDS = ["full_name", "relation", "phone_primary", "phone_secondary", "email",
                      "address", "priority", "notes"]
+_ROLE_FIELDS = ["department", "grade", "role_effective_date"]            # + virtual "reports_to"
+_CONTRACT_FIELDS2 = ["contract_type", "working_pattern", "weekly_hours", "fte", "start_date",
+                     "continuous_service_date", "probation_end_date", "notice_period", "work_location"]
+_DATE_FIELDS = {"dob", "role_effective_date", "start_date", "continuous_service_date", "probation_end_date"}
+_FLOAT_FIELDS = {"weekly_hours", "fte"}
 _MAX_PHOTO_CHARS = 2_800_000          # ~2MB image as a base64 data URL
 
 
@@ -33,6 +39,10 @@ def get_or_create_employee(db: Session, user: User) -> Employee:
         db.add(EmployeePersonal(employee_id=emp.id, preferred_name=(user.short_name or None)))
     if emp.contact is None:
         db.add(EmployeeContact(employee_id=emp.id))
+    if emp.role is None:
+        db.add(EmployeeRole(employee_id=emp.id))
+    if emp.employment is None:
+        db.add(EmployeeContract(employee_id=emp.id, start_date=emp.start_date))
     db.commit()
     db.refresh(emp)
     return emp
@@ -47,6 +57,10 @@ def employee_for(db: Session, employee_id) -> Employee:
                                 preferred_name=(emp.user.short_name if emp.user else None)))
     if emp.contact is None:
         db.add(EmployeeContact(employee_id=emp.id))
+    if emp.role is None:
+        db.add(EmployeeRole(employee_id=emp.id))
+    if emp.employment is None:
+        db.add(EmployeeContract(employee_id=emp.id, start_date=emp.start_date))
     db.commit()
     db.refresh(emp)
     return emp
@@ -127,6 +141,38 @@ def emergency_view(emp: Employee, scopes: set[str]) -> list[dict]:
     return out
 
 
+def _manager_brief(db: Session, emp: Employee) -> dict | None:
+    """Resolve Employee.reports_to_id (an employee UUID) to {userId, name} for display."""
+    if not emp.reports_to_id:
+        return None
+    mgr = db.get(Employee, emp.reports_to_id)
+    if not mgr or not mgr.user:
+        return None
+    return {"userId": mgr.user_id, "name": mgr.user.name}
+
+
+def role_view(db: Session, emp: Employee, scopes: set[str]) -> dict:
+    data = _row_dict(emp.role, _ROLE_FIELDS)
+    if data.get("role_effective_date"):
+        data["role_effective_date"] = data["role_effective_date"].isoformat()
+    mgr = _manager_brief(db, emp)
+    data["reports_to"] = mgr["userId"] if mgr else None
+    out = perms.ROLE.project_flat(data, scopes)
+    # Read-only context the manager/admin/self can always see alongside the role group.
+    if perms.ROLE.readable_group_names(scopes):
+        out["reports_to_name"] = mgr["name"] if mgr else None
+        out["job_title"] = emp.user.job_title if emp.user else None
+    return out
+
+
+def contract_details_view(emp: Employee, scopes: set[str]) -> dict:
+    data = _row_dict(emp.employment, _CONTRACT_FIELDS2)
+    for f in ("start_date", "continuous_service_date", "probation_end_date"):
+        if data.get(f):
+            data[f] = data[f].isoformat()
+    return perms.CONTRACT_DETAILS.project_flat(data, scopes)
+
+
 def composite(db: Session, emp: Employee, scopes: set[str]) -> dict:
     out = {"summary": summary(db, emp)}
     if perms.PERSONAL.readable_group_names(scopes):
@@ -135,17 +181,30 @@ def composite(db: Session, emp: Employee, scopes: set[str]) -> dict:
         out["contact"] = contact_view(emp, scopes)
     if perms.EMERGENCY.can_read("self.emergency", scopes):
         out["emergencyContacts"] = emergency_view(emp, scopes)
+    if perms.ROLE.readable_group_names(scopes):
+        out["role"] = role_view(db, emp, scopes)
+    if perms.CONTRACT_DETAILS.readable_group_names(scopes):
+        out["contractDetails"] = contract_details_view(emp, scopes)
     return out
 
 
 # --------------------------------------------------------------- audited writes
 def _coerce(field, value):
-    if field == "dob" and value:
+    if field in _DATE_FIELDS:
+        if value in (None, ""):
+            return None
         from datetime import date
         try:
             return date.fromisoformat(value)
         except (TypeError, ValueError):
-            raise HTTPException(400, "dob must be YYYY-MM-DD")
+            raise HTTPException(400, f"{field} must be a date (YYYY-MM-DD)")
+    if field in _FLOAT_FIELDS:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{field} must be a number")
     return value
 
 
@@ -185,4 +244,53 @@ def update_contact(db, emp, changes: dict, scopes, actor, request):
             setattr(row, field, value)
             record_audit(db, actor=actor, action="UPDATE", entity_type="employee_contact",
                          entity_id=emp.id, field=field, old=old, new=value, request=request)
+    db.commit()
+
+
+def update_role(db, emp, changes: dict, scopes, actor, request):
+    allowed, denied = perms.ROLE.filter_writes(changes, scopes)
+    if denied:
+        raise HTTPException(403, f"Not permitted to edit: {', '.join(denied)}")
+    # "reports_to" is virtual: a USER id that we map to that person's employee row.
+    if "reports_to" in allowed:
+        new_uid = allowed.pop("reports_to")
+        new_emp_id = None
+        if new_uid not in (None, ""):
+            mgr_user = db.get(User, int(new_uid))
+            if not mgr_user:
+                raise HTTPException(400, "Reports-to user not found")
+            if mgr_user.id == emp.user_id:
+                raise HTTPException(400, "An employee cannot report to themselves")
+            new_emp_id = get_or_create_employee(db, mgr_user).id
+        if emp.reports_to_id != new_emp_id:
+            old = emp.reports_to_id
+            emp.reports_to_id = new_emp_id
+            record_audit(db, actor=actor, action="UPDATE", entity_type="employee",
+                         entity_id=emp.id, field="reports_to_id", old=str(old) if old else None,
+                         new=str(new_emp_id) if new_emp_id else None, request=request)
+    row = emp.role
+    for field, value in allowed.items():
+        new = _coerce(field, value)
+        old = getattr(row, field, None)
+        if old != new:
+            setattr(row, field, new)
+            record_audit(db, actor=actor, action="UPDATE", entity_type="employee_role",
+                         entity_id=emp.id, field=field, old=str(old) if old else None,
+                         new=str(new) if new else None, request=request)
+    db.commit()
+
+
+def update_contract_details(db, emp, changes: dict, scopes, actor, request):
+    allowed, denied = perms.CONTRACT_DETAILS.filter_writes(changes, scopes)
+    if denied:
+        raise HTTPException(403, f"Not permitted to edit: {', '.join(denied)}")
+    row = emp.employment
+    for field, value in allowed.items():
+        new = _coerce(field, value)
+        old = getattr(row, field, None)
+        if old != new:
+            setattr(row, field, new)
+            record_audit(db, actor=actor, action="UPDATE", entity_type="employee_contract",
+                         entity_id=emp.id, field=field, old=str(old) if old else None,
+                         new=str(new) if new else None, request=request)
     db.commit()

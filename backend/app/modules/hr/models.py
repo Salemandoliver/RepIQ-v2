@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.mixins import DomainBase
@@ -37,6 +37,10 @@ class Employee(DomainBase, Base):
     emergency_contacts = relationship("EmployeeEmergencyContact", back_populates="employee",
                                       cascade="all, delete-orphan",
                                       order_by="EmployeeEmergencyContact.priority")
+    role = relationship("EmployeeRole", uselist=False, back_populates="employee",
+                        cascade="all, delete-orphan")
+    employment = relationship("EmployeeContract", uselist=False, back_populates="employee",
+                              cascade="all, delete-orphan")
 
 
 class EmployeePersonal(DomainBase, Base):
@@ -77,6 +81,38 @@ class EmployeeContact(DomainBase, Base):
     preferred_contact_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     employee = relationship("Employee", back_populates="contact")
+
+
+class EmployeeRole(DomainBase, Base):
+    """Current position (brief §12 — Role tab). Job title lives on the login ``User`` (used app-wide)
+    and the line manager on ``Employee.reports_to_id``; this row holds the rest."""
+    __tablename__ = "hr_employee_role"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), unique=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(60), nullable=True)              # band / level
+    role_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)     # current role since
+
+    employee = relationship("Employee", back_populates="role")
+
+
+class EmployeeContract(DomainBase, Base):
+    """Employment contract (brief §12 — Contract tab). Pay/bank are a separate financial-scope
+    domain and are not modelled here."""
+    __tablename__ = "hr_employee_contract"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), unique=True, index=True)
+    contract_type: Mapped[str | None] = mapped_column(String(40), nullable=True)      # Permanent / Fixed-term / Contractor
+    working_pattern: Mapped[str | None] = mapped_column(String(40), nullable=True)    # Full-time / Part-time
+    weekly_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fte: Mapped[float | None] = mapped_column(Float, nullable=True)                   # 0.0–1.0
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    continuous_service_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    probation_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notice_period: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    work_location: Mapped[str | None] = mapped_column(String(80), nullable=True)      # Office / Hybrid / Remote / site
+
+    employee = relationship("Employee", back_populates="employment")
 
 
 class EmployeeEmergencyContact(DomainBase, Base):

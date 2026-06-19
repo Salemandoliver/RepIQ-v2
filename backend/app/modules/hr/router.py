@@ -159,6 +159,26 @@ def put_employee_contact(user_id: int, body: dict, request: Request,
     return svc.contact_view(emp, scopes)
 
 
+@router.put("/employees/{user_id}/role")
+def put_employee_role(user_id: int, body: dict, request: Request,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    svc.update_role(db, emp, body or {}, scopes, user, request)
+    db.refresh(emp)
+    return svc.role_view(db, emp, scopes)
+
+
+@router.put("/employees/{user_id}/contract-details")
+def put_employee_contract_details(user_id: int, body: dict, request: Request,
+                                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    svc.update_contract_details(db, emp, body or {}, scopes, user, request)
+    db.refresh(emp)
+    return svc.contract_details_view(emp, scopes)
+
+
 @router.post("/employees/{user_id}/emergency-contacts")
 def add_employee_emergency(user_id: int, body: dict, request: Request,
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
