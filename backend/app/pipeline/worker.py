@@ -309,10 +309,12 @@ def maybe_weekly_reports(db) -> None:
 
 
 def maybe_weekly_videos(db) -> None:
-    """Early Monday (>= 05:00 UTC): pre-generate this week's AI performance videos for enabled
-    teams so they're rendered and ready before reps/managers open them. Runs once per week."""
+    """Early Monday (>= 03:00 UTC / 04:00 BST): pre-generate this week's AI performance videos
+    for enabled teams so the whole batch has time to finish rendering on HeyGen before the
+    working day starts (~9am). Submission happens here; HeyGen then renders asynchronously, so
+    we kick off early to leave a comfortable margin. Runs once per week."""
     now = datetime.utcnow()
-    if now.weekday() != 0 or now.hour < 5:
+    if now.weekday() != 0 or now.hour < 3:
         return
     from datetime import date
     from ..models import Setting

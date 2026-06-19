@@ -221,6 +221,9 @@ export default function MorningDashboard() {
   const emails = plan.promises.filter((p) => p.type === "email");
   const ordered = [...callbacks, ...emails];
   const m = plan.momentum || {};
+  // The brief is generated server-side with a fixed "Good morning"; align it to the viewer's
+  // local time so it matches the header greeting.
+  const brief = (plan.brief || "").replace(/^Good (morning|afternoon|evening)/i, greeting);
 
   return (
     <div className="page" style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 22px 60px" }}>
@@ -237,7 +240,7 @@ export default function MorningDashboard() {
 
       {/* AI brief */}
       <div className="card" style={{ background: "linear-gradient(135deg,#3b1d6e,#6d28d9)", color: "#fff", border: "none" }}>
-        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{plan.brief}</div>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{brief}</div>
       </div>
 
       <div style={{ marginTop: 16 }}><AskCopilot /></div>
