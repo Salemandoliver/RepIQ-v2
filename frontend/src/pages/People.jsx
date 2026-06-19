@@ -197,10 +197,10 @@ export default function People() {
   const saveEdit = async (f) => {
     setBusy(true);
     try {
-      await api.patch(`/api/admin/users/${editing.id}`, {
-        name: f.name, role: f.role, job_title: f.job_title,
-        short_name: f.short_name, team_id: f.team_id,
-      });
+      const payload = { name: f.name, role: f.role, job_title: f.job_title,
+        short_name: f.short_name, team_id: f.team_id };
+      if (isAdmin) { payload.platform_role = f.platform_role; payload.scopes = f.scopes; }
+      await api.patch(`/api/admin/users/${editing.id}`, payload);
       setEditing(null);
       toast("Saved.", "success");
       load();
@@ -263,7 +263,18 @@ export default function People() {
               <div key={u.id} className="flex" style={{ gap: 12, alignItems: "center", padding: "12px 16px", borderTop: i ? "1px solid var(--border)" : "none" }}>
                 <Avatar name={u.name} color={u.avatar_color} size={34} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{u.name} {u.sales_role && <span className="muted small" style={{ textTransform: "capitalize" }}>· {u.sales_role}</span>}</div>
+                  <div className="flex" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600 }}>{u.name}</span>
+                    {u.platform_role && u.platform_role !== "employee" && (
+                      <span className="chip" style={{ fontSize: 10.5, fontWeight: 700, textTransform: "capitalize",
+                        background: (PLAT_COLORS[u.platform_role] || "#6b7280") + "22", color: PLAT_COLORS[u.platform_role] || "#6b7280" }}>
+                        {u.platform_role}</span>
+                    )}
+                    {(u.scopes || []).includes("financial") && (
+                      <span className="chip" style={{ fontSize: 10.5, fontWeight: 700, background: "rgba(34,197,94,0.15)", color: "var(--green)" }}>finance</span>
+                    )}
+                    {u.sales_role && <span className="muted small" style={{ textTransform: "capitalize" }}>· {u.sales_role}</span>}
+                  </div>
                   <div className="muted small">{u.email}{u.job_title ? ` · ${u.job_title}` : ""}</div>
                 </div>
                 <span className="small" style={{ color: st.color, fontWeight: 600, flexShrink: 0, minWidth: 56 }}>{st.label}</span>

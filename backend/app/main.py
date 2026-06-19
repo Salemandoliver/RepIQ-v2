@@ -12,6 +12,10 @@ from .routers import (auth_router, calls_router, insights_router,
                       admin_router, reports_router, webhooks_router,
                       playlists_router, companyiq_router, salesiq_router,
                       intelligence_router, teams_router, company_router)
+# RepIQ v2 modular monolith: core + feature modules self-register with the registry.
+from .core import audit as _audit_models          # noqa: F401  registers audit_log on Base.metadata
+from .core import registry as module_registry
+from .modules import hr as _hr_module             # noqa: F401  registers HR module + its tables
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,6 +30,10 @@ for r in (auth_router, calls_router, insights_router, admin_router,
           reports_router, webhooks_router, playlists_router, companyiq_router,
           salesiq_router, intelligence_router, teams_router, company_router):
     app.include_router(r.router)
+
+# Feature modules registered via the core registry (HR, and future Orders, …).
+for _mod_router in module_registry.all_routers():
+    app.include_router(_mod_router)
 
 
 @app.get("/api/health")
