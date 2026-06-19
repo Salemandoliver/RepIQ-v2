@@ -1,0 +1,126 @@
+import logging
+import os
+import threading
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
+from .config import settings
+from .db import Base, engine, SessionLocal
+from .routers import (auth_router, calls_router, insights_router,
+                      admin_router, reports_router, webhooks_router,
+                      playlists_router, companyiq_router, salesiq_router,
+                      intelligence_router, teams_router, company_router)
+
+logging.basicConfig(level=logging.INFO)
+
+app = FastAPI(title="CallIQ API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)
+
+for r in (auth_router, calls_router, insights_router, admin_router,
+          reports_router, webhooks_router, playlists_router, companyiq_router,
+          salesiq_router, intelligence_router, teams_router, company_router):
+    app.include_router(r.router)
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True, "app": settings.app_name, "demo_mode": settings.demo_mode}
+
+
+def _ensure_columns():
+    """Lightweight additive migrations for create_all-managed schemas (no Alembic).
+    Adds columns introduced after a table was first created. Idempotent + safe."""
+    stmts = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS short_name VARCHAR(120)",
+        # Auth / onboarding lifecycle
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_set_password BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS left_on TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS left_by_id INTEGER",
+        "ALTER TABLE calls ADD COLUMN IF NOT EXISTS process_attempts INTEGER DEFAULT 0",
+        # Intelligence Layer — call outcome logging (keystone)
+        "ALTER TABLE calls ADD COLUMN IF NOT EXISTS outcome VARCHAR(24)",
+        "ALTER TABLE calls ADD COLUMN IF NOT EXISTS outcome_note TEXT",
+        "ALTER TABLE calls ADD COLUMN IF NOT EXISTS outcome_at TIMESTAMP",
+        "ALTER TABLE calls ADD COLUMN IF NOT EXISTS outcome_by INTEGER",
+        # Intelligence Layer — post-call coaching-card fields on call_analyses
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS interruptions INTEGER DEFAULT 0",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS filler_count INTEGER DEFAULT 0",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS question_breakdown JSON",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS objections JSON",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS strengths JSON",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS improvements JSON",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS one_thing TEXT",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS energy_note TEXT",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS best_moment JSON",
+        "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS followups JSON",
+        # Feature 8 — HeyGen completed video_url is a long signed URL; varchar(500) truncates it.
+        "ALTER TABLE performance_videos ALTER COLUMN video_url TYPE TEXT",
+    ]
+    from sqlalchemy import text
+    # Each statement in its OWN transaction — so one failure can't abort the others (a single
+    # shared transaction aborts entirely on any error in Postgres, which could leave a column
+    # missing and break every query, including login).
+    for s in stmts:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(s))
+        except Exception as e:  # already-exists / SQLite limitations — safe to ignore
+            logging.getLogger("calliq").warning("migration skipped: %s (%s)", s, e)
+
+
+@app.on_event("startup")
+def startup():
+    Base.metadata.create_all(bind=engine)
+    try:
+        _ensure_columns()
+    except Exception:
+        logging.getLogger("calliq").exception("column migration failed")
+    db = SessionLocal()
+    try:
+        from .seed.bootstrap import ensure_bootstrap
+        ensure_bootstrap(db)
+        # Emergency access recovery: set ADMIN_RESET_PASSWORD in the environment to reset the
+        # admin@btlocalbusiness.co.uk password on boot (then remove the variable again).
+        _reset_pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()
+        if _reset_pw:
+            from .models import User as _User
+            from .auth import hash_password as _hash
+            _a = db.query(_User).filter(_User.email == "admin@btlocalbusiness.co.uk").first()
+            if _a:
+                _a.password_hash = _hash(_reset_pw)
+                db.commit()
+                logging.getLogger("calliq").info("Admin password reset via ADMIN_RESET_PASSWORD")
+        if settings.demo_mode:
+            from .seed.demo import seed_demo_if_empty
+            seed_demo_if_empty(db)
+    finally:
+        db.close()
+    # Single-service deployments (e.g. Railway): run the pipeline worker in-process.
+    # Default ON; set RUN_WORKER_IN_APP=false only if running a separate worker process.
+    if os.environ.get("RUN_WORKER_IN_APP", "true").lower() not in ("0", "false", "no"):
+        from .pipeline.worker import run_forever
+        threading.Thread(target=run_forever, daemon=True, name="calliq-worker").start()
+        logging.getLogger("calliq").info("In-process worker thread started")
+
+
+# ---- Static frontend (present when built into the image; see root Dockerfile) ----
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        candidate = os.path.normpath(os.path.join(_static_dir, full_path))
+        if (full_path and candidate.startswith(_static_dir)
+                and os.path.isfile(candidate)):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(_static_dir, "index.html"))

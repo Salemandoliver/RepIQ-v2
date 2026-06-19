@@ -1,0 +1,33 @@
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Databases / local data
+*.db
+*.sqlite3
+backend/audio/
+audio/
+data/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+dist/
+
+# Logs / runtime
+*.log
+recording-agent/uploaded/
+recording-agent/processed/
+recording-agent/failed/
+recording-agent/config.ini
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
