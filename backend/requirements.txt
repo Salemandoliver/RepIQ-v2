@@ -10,3 +10,8 @@ gspread==6.*
 google-auth==2.*
 openpyxl==3.*
 psycopg2-binary==2.9.*; platform_system != "Windows"
+# RepIQ v2 platform core
+cryptography==44.*          # AES-256-GCM field encryption (financial data)
+alembic==1.*               # schema migrations (replaces ad-hoc _ensure_columns)
+pyotp==2.*                 # TOTP MFA for admin
+boto3==1.*                 # Cloudflare R2 (S3-compatible) document storage
