@@ -116,9 +116,9 @@ export default function Sidebar({ user }) {
           <div className="small muted" style={{ marginBottom: 10, textTransform: "capitalize" }}>
             Role: {user?.role}
           </div>
-          <button className="btn btn-outline btn-sm" style={{ marginBottom: 8, width: "100%", justifyContent: "center" }}
+          <button className="btn btn-primary btn-sm" style={{ marginBottom: 8, width: "100%", justifyContent: "center" }}
             onClick={() => { setMenuOpen(false); navigate("/account"); }}>
-            Change password
+            My profile &amp; account
           </button>
           <button className="btn btn-outline btn-sm" onClick={logout}>
             <LogoutIcon size={14} /> Sign out
