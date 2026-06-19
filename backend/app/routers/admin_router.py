@@ -35,7 +35,24 @@ _ALLOWED_SCOPES = {"financial", "ops.orders", "ops.schedule5", "ops.commission",
 # ---- users ----
 @router.get("/users", response_model=list[UserOut])
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return [UserOut.model_validate(u) for u in db.query(User).order_by(User.name).all()]
+    users = db.query(User).order_by(User.name).all()
+    # Batch-load HR display identity (preferred name + photo) for all users in one query.
+    pref: dict[int, tuple] = {}
+    try:
+        from ..modules.hr.models import Employee, EmployeePersonal
+        rows = (db.query(Employee.user_id, EmployeePersonal.preferred_name, EmployeePersonal.profile_photo)
+                .join(EmployeePersonal, EmployeePersonal.employee_id == Employee.id)
+                .filter(EmployeePersonal.deleted_at.is_(None)).all())
+        pref = {uid: (pn, ph) for uid, pn, ph in rows}
+    except Exception:
+        pass
+    out = []
+    for u in users:
+        o = UserOut.model_validate(u)
+        if u.id in pref:
+            o.preferred_name, o.photo = pref[u.id]
+        out.append(o)
+    return out
 
 
 def _guard_admin_target(actor: User, target_role: str | None):
@@ -112,6 +129,19 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db),
             if bad:
                 raise HTTPException(400, f"Unknown scope(s): {bad}")
             u.scopes = list(dict.fromkeys(body.scopes))
+    # Preferred name ("known as") is stored on the HR record and mirrored to short_name for
+    # tracker matching. Managers and admins may set it (it's a display name, not sensitive).
+    if body.preferred_name is not None:
+        from ..modules.hr.services import get_or_create_employee
+        from ..core.audit import record_audit
+        emp = get_or_create_employee(db, u)
+        val = (body.preferred_name or "").strip() or None
+        if emp.personal.preferred_name != val:
+            old = emp.personal.preferred_name
+            emp.personal.preferred_name = val
+            u.short_name = val
+            record_audit(db, actor=actor, action="UPDATE", entity_type="employee_personal",
+                         entity_id=emp.id, field="preferred_name", old=old, new=val)
     db.commit()
     db.refresh(u)
     return UserOut.model_validate(u)

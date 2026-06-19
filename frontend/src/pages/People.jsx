@@ -56,7 +56,7 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
   const [email, setEmail] = useState(initial?.email || "");
   const [role, setRole] = useState(initial?.role || "recorder");
   const [jobTitle, setJobTitle] = useState(initial?.job_title || "Sales Rep");
-  const [shortName, setShortName] = useState(initial?.short_name || "");
+  const [preferredName, setPreferredName] = useState(initial?.preferred_name || initial?.short_name || "");
   const [teamId, setTeamId] = useState(initial?.team_id || "");
   const [method, setMethod] = useState("invite");   // invite | password (new users only)
   const [password, setPassword] = useState("");
@@ -67,7 +67,7 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
     e.preventDefault();
     onSubmit({
       name: name.trim(), email: email.trim().toLowerCase(), role, job_title: jobTitle.trim(),
-      short_name: shortName.trim() || null, team_id: teamId ? Number(teamId) : null,
+      preferred_name: preferredName.trim() || null, team_id: teamId ? Number(teamId) : null,
       method, password,
       platform_role: platformRole, scopes: financial ? ["financial"] : [],
     });
@@ -97,9 +97,9 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
             <option value="">— none —</option>
             {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select></label>
-        <label className="field" style={{ flex: 1 }}><span>Tracker name <span className="muted">(optional)</span></span>
-          <input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)}
-            placeholder="Name used in the trackers" /></label>
+        <label className="field" style={{ flex: 1 }}><span>Preferred name <span className="muted">(known as)</span></span>
+          <input className="input" value={preferredName} onChange={(e) => setPreferredName(e.target.value)}
+            placeholder="e.g. Pat, Kune" /></label>
       </div>
 
       {!editing && (
@@ -177,7 +177,7 @@ export default function People() {
       if (f.method === "invite") {
         const r = await api.post("/api/admin/users/invite", {
           name: f.name, email: f.email, role: f.role, job_title: f.job_title,
-          short_name: f.short_name, team_id: f.team_id,
+          short_name: f.preferred_name, team_id: f.team_id,
         });
         setAdding(false);
         setLinkResult({ title: `Invite link for ${f.name}`, link: r.link, expires: r.expires });
@@ -185,7 +185,7 @@ export default function People() {
         if ((f.password || "").length < 8) { toast("Initial password must be at least 8 characters.", "error"); setBusy(false); return; }
         await api.post("/api/admin/users", {
           name: f.name, email: f.email, password: f.password, role: f.role,
-          job_title: f.job_title, short_name: f.short_name, team_id: f.team_id,
+          job_title: f.job_title, short_name: f.preferred_name, team_id: f.team_id,
         });
         setAdding(false);
         toast(`${f.name} added.`, "success");
@@ -198,7 +198,7 @@ export default function People() {
     setBusy(true);
     try {
       const payload = { name: f.name, role: f.role, job_title: f.job_title,
-        short_name: f.short_name, team_id: f.team_id };
+        preferred_name: f.preferred_name, team_id: f.team_id };
       if (isAdmin) { payload.platform_role = f.platform_role; payload.scopes = f.scopes; }
       await api.patch(`/api/admin/users/${editing.id}`, payload);
       setEditing(null);
@@ -261,10 +261,10 @@ export default function People() {
             const canEditAdmin = u.role !== "admin" || isAdmin;
             return (
               <div key={u.id} className="flex" style={{ gap: 12, alignItems: "center", padding: "12px 16px", borderTop: i ? "1px solid var(--border)" : "none" }}>
-                <Avatar name={u.name} color={u.avatar_color} size={34} />
+                <Avatar name={u.name} color={u.avatar_color} size={34} photo={u.photo} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 600 }}>{u.name}</span>
+                    <span style={{ fontWeight: 600 }}>{u.preferred_name || u.name}</span>
                     {u.platform_role && u.platform_role !== "employee" && (
                       <span className="chip" style={{ fontSize: 10.5, fontWeight: 700, textTransform: "capitalize",
                         background: (PLAT_COLORS[u.platform_role] || "#6b7280") + "22", color: PLAT_COLORS[u.platform_role] || "#6b7280" }}>
@@ -275,7 +275,7 @@ export default function People() {
                     )}
                     {u.sales_role && <span className="muted small" style={{ textTransform: "capitalize" }}>· {u.sales_role}</span>}
                   </div>
-                  <div className="muted small">{u.email}{u.job_title ? ` · ${u.job_title}` : ""}</div>
+                  <div className="muted small">{u.preferred_name && u.preferred_name !== u.name ? `${u.name} · ` : ""}{u.email}{u.job_title ? ` · ${u.job_title}` : ""}</div>
                 </div>
                 <span className="small" style={{ color: st.color, fontWeight: 600, flexShrink: 0, minWidth: 56 }}>{st.label}</span>
                 <div className="flex" style={{ gap: 6, flexShrink: 0 }}>

@@ -204,7 +204,7 @@ export default function MorningDashboard() {
   useEffect(() => { load(false); /* eslint-disable-next-line */ }, [uid]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; })();
-  const first = (user?.name || "there").split(" ")[0];
+  const first = user?.preferred_name || (user?.name || "there").split(" ")[0];
 
   if (loading && !plan) {
     return (

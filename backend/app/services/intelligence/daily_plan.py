@@ -76,6 +76,11 @@ def daily_plan(db, user: User) -> dict:
                     "score": round(quality_100(qmap[bid]))}
 
     first = (user.name or "there").split()[0]
+    try:                                       # prefer the person's "known as" name
+        from ...modules.hr.services import display_first_name
+        first = display_first_name(db, user)
+    except Exception:
+        pass
     n = len(sales_calls)
     if n == 0:
         brief = (f"Good morning, {first}. No sales calls logged yesterday — a clean slate "

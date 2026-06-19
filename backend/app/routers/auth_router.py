@@ -17,6 +17,19 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def _user_out(db: Session, user: User) -> UserOut:
     out = UserOut.model_validate(user)
     out.sales_role = role_for_user(db, user)
+    # Enrich with the signed-in user's HR display identity (preferred name + photo), if set.
+    # Wrapped so a missing/not-yet-created HR table never breaks auth.
+    try:
+        from ..modules.hr.models import Employee, EmployeePersonal
+        pers = (db.query(EmployeePersonal)
+                .join(Employee, EmployeePersonal.employee_id == Employee.id)
+                .filter(Employee.user_id == user.id, EmployeePersonal.deleted_at.is_(None))
+                .first())
+        if pers:
+            out.preferred_name = pers.preferred_name
+            out.photo = pers.profile_photo
+    except Exception:
+        pass
     return out
 
 

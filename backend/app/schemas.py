@@ -58,6 +58,10 @@ class UserOut(ORM):
     # Platform RBAC (RepIQ v2): authoritative HR/Orders role + capability scopes.
     platform_role: str | None = None
     scopes: list | None = None
+    # HR display identity — the name the person wants to be called + their photo. Populated
+    # for the signed-in user so the app greets and pictures them correctly.
+    preferred_name: str | None = None
+    photo: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -80,6 +84,7 @@ class UserUpdate(BaseModel):
     password: str | None = None
     platform_role: str | None = None       # admin-only (validated in the router)
     scopes: list[str] | None = None        # admin-only
+    preferred_name: str | None = None      # "known as" — written to the HR record
 
 
 class TeamOut(ORM):

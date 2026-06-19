@@ -103,12 +103,15 @@ export default function Sidebar({ user }) {
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Account"
         >
-          <Avatar name={user?.name} color={user?.avatar_color} size={36} />
+          <Avatar name={user?.name} color={user?.avatar_color} size={36} photo={user?.photo} />
         </button>
       </div>
       {menuOpen && (
         <div className="user-pop" ref={popRef}>
-          <div className="name">{user?.name}</div>
+          <div className="name">{user?.preferred_name || user?.name}</div>
+          {user?.preferred_name && user?.preferred_name !== user?.name && (
+            <div className="small muted" style={{ marginTop: -2 }}>{user?.name}</div>
+          )}
           <div className="email">{user?.email}</div>
           <div className="small muted" style={{ marginBottom: 10, textTransform: "capitalize" }}>
             Role: {user?.role}

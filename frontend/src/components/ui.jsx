@@ -2,7 +2,15 @@ import React from "react";
 import { initials, scoreColorHard } from "../utils";
 import { XIcon } from "./Icons.jsx";
 
-export function Avatar({ name, color, size = 36 }) {
+export function Avatar({ name, color, size = 36, photo }) {
+  if (photo) {
+    return (
+      <span className="avatar" title={name}
+        style={{ width: size, height: size, padding: 0, overflow: "hidden", background: "#fff" }}>
+        <img src={photo} alt={name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </span>
+    );
+  }
   return (
     <span
       className="avatar"

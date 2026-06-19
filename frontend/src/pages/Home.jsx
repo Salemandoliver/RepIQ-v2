@@ -124,7 +124,7 @@ export default function Home() {
     <div className="page">
       <div className="spread" style={{ marginBottom: 20 }}>
         <div>
-          <h1 className="page-title">Welcome back, {(user?.name || "").split(" ")[0]} 👋</h1>
+          <h1 className="page-title">Welcome back, {user?.preferred_name || (user?.name || "").split(" ")[0]} 👋</h1>
           <p className="page-sub">Here's what's happening across your team's calls.</p>
         </div>
       </div>

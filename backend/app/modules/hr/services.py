@@ -29,7 +29,8 @@ def get_or_create_employee(db: Session, user: User) -> Employee:
         db.add(emp)
         db.flush()
     if emp.personal is None:
-        db.add(EmployeePersonal(employee_id=emp.id))
+        # Seed the preferred name from the legacy tracker name (short_name), migrating it.
+        db.add(EmployeePersonal(employee_id=emp.id, preferred_name=(user.short_name or None)))
     if emp.contact is None:
         db.add(EmployeeContact(employee_id=emp.id))
     db.commit()
@@ -42,12 +43,23 @@ def employee_for(db: Session, employee_id) -> Employee:
     if not emp or emp.deleted_at is not None:
         raise HTTPException(404, "Employee not found")
     if emp.personal is None:
-        db.add(EmployeePersonal(employee_id=emp.id))
+        db.add(EmployeePersonal(employee_id=emp.id,
+                                preferred_name=(emp.user.short_name if emp.user else None)))
     if emp.contact is None:
         db.add(EmployeeContact(employee_id=emp.id))
     db.commit()
     db.refresh(emp)
     return emp
+
+
+def display_first_name(db: Session, user: User) -> str:
+    """The name to greet/address a person by: their HR preferred name, else the first part of
+    their legal name. Used by greetings and the AI daily brief."""
+    emp = db.query(Employee).filter(Employee.user_id == user.id).first()
+    if emp and emp.personal and emp.personal.preferred_name:
+        return emp.personal.preferred_name
+    parts = (user.name or "there").split()
+    return parts[0] if parts else "there"
 
 
 # --------------------------------------------------------------- scopes
@@ -146,6 +158,10 @@ def update_personal(db, emp, changes: dict, scopes, actor, request):
             setattr(row, field, new)
             record_audit(db, actor=actor, action="UPDATE", entity_type="employee_personal",
                          entity_id=emp.id, field=field, old=old, new=new, request=request)
+    # Mirror the preferred name onto the user's tracker-matching name (short_name) so the
+    # Sales/Activity/Lead tracker matching keeps working off one human-friendly name.
+    if "preferred_name" in allowed and emp.user is not None:
+        emp.user.short_name = allowed["preferred_name"] or None
     db.commit()
 
 
