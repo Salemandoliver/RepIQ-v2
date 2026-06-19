@@ -225,6 +225,17 @@ export default function People() {
     catch (e) { toast(e.message, "error"); }
   };
 
+  const resetTeamPasswords = async () => {
+    const pw = window.prompt(
+      "Set this password for ALL users except the Managing Director and admin@btlocalbusiness.co.uk:",
+      "RepIQ-Reset-2026!");
+    if (!pw) return;
+    try {
+      const r = await api.post("/api/admin/users/reset-passwords", { password: pw });
+      toast(`Reset ${r.reset} password${r.reset === 1 ? "" : "s"}.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+  };
+
   const filtered = (users || []).filter((u) => {
     const isLeaver = u.left_on || (!u.active && !u.must_set_password);
     if (isLeaver && !showLeavers) return false;
@@ -238,9 +249,12 @@ export default function People() {
       <div className="spread" style={{ marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24 }}>People</h1>
-          <div className="muted">Add team members, send sign-in links, and manage leavers.</div>
+          <div className="muted">Add team members, set roles &amp; access, send sign-in links, and manage leavers.</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add person</button>
+        <div className="flex" style={{ gap: 8 }}>
+          {isAdmin && <button className="btn btn-outline" onClick={resetTeamPasswords}>Reset team passwords</button>}
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add person</button>
+        </div>
       </div>
 
       <div className="flex" style={{ gap: 10, marginBottom: 14 }}>

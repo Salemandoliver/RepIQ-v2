@@ -9,7 +9,6 @@ import { PlusIcon, TrashIcon, EditIcon, XIcon } from "../components/Icons.jsx";
 const SECTIONS = [
   ["general", "General"],
   ["company", "Company"],
-  ["users", "Users"],
   ["teams", "Teams"],
   ["topics", "Topics"],
   ["ask", "Ask RepIQ"],
@@ -1485,7 +1484,6 @@ export default function Settings() {
         <div className="settings-body">
           {section === "general" && <GeneralSection />}
           {section === "company" && <CompanySection />}
-          {section === "users" && <UsersSection teams={teams} />}
           {section === "teams" && <TeamsSection teams={teams} reloadTeams={reloadTeams} />}
           {section === "topics" && <TopicsSection />}
           {section === "ask" && <AskPresetsSection />}
