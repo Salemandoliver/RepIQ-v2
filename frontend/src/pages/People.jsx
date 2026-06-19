@@ -12,6 +12,8 @@ function copyText(t) {
   try { navigator.clipboard.writeText(t); return true; } catch { return false; }
 }
 
+const PLAT_COLORS = { manager: "#2563eb", operations: "#7c3aed", admin: "#e11d48", employee: "#6b7280" };
+
 function status_of(u) {
   if (u.left_on || (!u.active && !u.must_set_password)) return { label: "Leaver", color: "var(--red)" };
   if (u.must_set_password) return { label: "Invited", color: "var(--amber)" };
@@ -58,6 +60,8 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
   const [teamId, setTeamId] = useState(initial?.team_id || "");
   const [method, setMethod] = useState("invite");   // invite | password (new users only)
   const [password, setPassword] = useState("");
+  const [platformRole, setPlatformRole] = useState(initial?.platform_role || "employee");
+  const [financial, setFinancial] = useState(!!(initial?.scopes || []).includes("financial"));
 
   const submit = (e) => {
     e.preventDefault();
@@ -65,6 +69,7 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
       name: name.trim(), email: email.trim().toLowerCase(), role, job_title: jobTitle.trim(),
       short_name: shortName.trim() || null, team_id: teamId ? Number(teamId) : null,
       method, password,
+      platform_role: platformRole, scopes: financial ? ["financial"] : [],
     });
   };
 
@@ -117,6 +122,28 @@ function PersonForm({ teams, canSetAdmin, initial, onSubmit, submitting }) {
         </div>
       )}
 
+      {editing && canSetAdmin && (
+        <div className="field" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4 }}>
+          <span>Platform access <span className="muted">(admin only)</span></span>
+          <div className="flex" style={{ gap: 12, marginTop: 4, alignItems: "flex-end" }}>
+            <label className="field" style={{ flex: 1, margin: 0 }}><span className="small muted">Role</span>
+              <select className="input" value={platformRole} onChange={(e) => setPlatformRole(e.target.value)}>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="operations">Operations</option>
+                <option value="admin">Admin</option>
+              </select></label>
+            <label className="flex" style={{ gap: 6, cursor: "pointer", paddingBottom: 9 }}>
+              <input type="checkbox" checked={financial} onChange={(e) => setFinancial(e.target.checked)} />
+              <span className="small">Financial data access</span>
+            </label>
+          </div>
+          <div className="muted small" style={{ marginTop: 4 }}>
+            Controls HR &amp; Order Entry access. “Financial” reveals pay/bank data — grant sparingly.
+          </div>
+        </div>
+      )}
+
       <button className="btn btn-primary" style={{ justifyContent: "center", padding: "10px 18px", marginTop: 6 }} disabled={submitting}>
         {submitting ? "Saving…" : editing ? "Save changes" : method === "invite" ? "Create & generate invite link" : "Create user"}
       </button>
@@ -136,7 +163,7 @@ export default function People() {
   const [linkResult, setLinkResult] = useState(null);   // {title, link, expires}
   const [busy, setBusy] = useState(false);
 
-  const isAdmin = me?.role === "admin";
+  const isAdmin = me?.role === "admin" || me?.platform_role === "admin";
 
   const load = () => {
     api.get("/api/admin/users").then(setUsers).catch((e) => toast(e.message, "error"));

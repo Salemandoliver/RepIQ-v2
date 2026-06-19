@@ -42,6 +42,12 @@ class User(Base):
     # ---- leaver bookkeeping ----
     left_on: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     left_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # ---- platform RBAC (RepIQ v2) ----
+    # Authoritative role for HR / Orders / admin: employee | manager | operations | admin.
+    # Backfilled on startup, admin-assignable thereafter. Orthogonal to the derived sales_role.
+    platform_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Fine-grained capability grants, e.g. ["financial"]. The financial scope is admin-only.
+    scopes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     team: Mapped[Team | None] = relationship(back_populates="users", foreign_keys=[team_id])
 
 

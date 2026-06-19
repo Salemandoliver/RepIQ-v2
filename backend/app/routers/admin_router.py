@@ -27,6 +27,11 @@ def _issue_link(user: User, hours: int) -> None:
     user.reset_token_expires = datetime.utcnow() + timedelta(hours=hours)
 
 
+# RepIQ v2 platform RBAC — admin-assignable role + scopes.
+_PLATFORM_ROLES = {"employee", "manager", "operations", "admin"}
+_ALLOWED_SCOPES = {"financial", "ops.orders", "ops.schedule5", "ops.commission", "calliq.dispute"}
+
+
 # ---- users ----
 @router.get("/users", response_model=list[UserOut])
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -48,7 +53,8 @@ def create_user(body: UserCreate, db: Session = Depends(get_db),
     _guard_admin_target(actor, body.role)
     u = User(name=body.name, email=body.email.lower(), password_hash=hash_password(body.password),
              role=body.role, job_title=body.job_title, short_name=body.short_name,
-             team_id=body.team_id, password_changed_at=datetime.utcnow())
+             team_id=body.team_id, password_changed_at=datetime.utcnow(),
+             platform_role=("admin" if body.role == "admin" else "employee"))
     db.add(u)
     db.commit()
     db.refresh(u)
@@ -93,6 +99,19 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db),
         u.password_hash = hash_password(body.password)
         u.password_changed_at = datetime.utcnow()
         u.must_set_password = False
+    # Platform role + scopes are admin-only (changing HR/Orders access or financial visibility).
+    if body.platform_role is not None or body.scopes is not None:
+        if actor.role != "admin":
+            raise HTTPException(403, "Only an admin can change platform role or scopes")
+        if body.platform_role is not None:
+            if body.platform_role not in _PLATFORM_ROLES:
+                raise HTTPException(400, "Invalid platform role")
+            u.platform_role = body.platform_role
+        if body.scopes is not None:
+            bad = sorted(set(body.scopes) - _ALLOWED_SCOPES)
+            if bad:
+                raise HTTPException(400, f"Unknown scope(s): {bad}")
+            u.scopes = list(dict.fromkeys(body.scopes))
     db.commit()
     db.refresh(u)
     return UserOut.model_validate(u)

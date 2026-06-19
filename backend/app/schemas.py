@@ -55,6 +55,9 @@ class UserOut(ORM):
     must_set_password: bool = False
     last_login_at: datetime | None = None
     left_on: datetime | None = None
+    # Platform RBAC (RepIQ v2): authoritative HR/Orders role + capability scopes.
+    platform_role: str | None = None
+    scopes: list | None = None
 
 
 class UserCreate(BaseModel):
@@ -75,6 +78,8 @@ class UserUpdate(BaseModel):
     team_id: int | None = None
     active: bool | None = None
     password: str | None = None
+    platform_role: str | None = None       # admin-only (validated in the router)
+    scopes: list[str] | None = None        # admin-only
 
 
 class TeamOut(ORM):
