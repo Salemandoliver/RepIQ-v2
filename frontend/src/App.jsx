@@ -31,6 +31,7 @@ import SetPassword from "./pages/SetPassword.jsx";
 import Account from "./pages/Account.jsx";
 import People from "./pages/People.jsx";
 import HRProfile from "./pages/HRProfile.jsx";
+import HolidayCalendar from "./pages/HolidayCalendar.jsx";
 import Library from "./pages/Library.jsx";
 import CompanyIQ from "./pages/CompanyIQ.jsx";
 import SalesIQ from "./pages/SalesIQ.jsx";
@@ -116,6 +117,7 @@ export default function App() {
             <Route path="/people/:id" element={<PeopleArea><HRProfile /></PeopleArea>} />
             <Route path="/today" element={<RepArea><MorningDashboard /></RepArea>} />
             <Route path="/command-centre" element={<ManagerArea><CommandCentre /></ManagerArea>} />
+            <Route path="/holiday" element={<HolidayCalendar />} />
             <Route path="/companyiq" element={<CompanyIQ />} />
             <Route path="/salesiq" element={<SalesIQ />} />
             <Route path="/library" element={<Library />} />

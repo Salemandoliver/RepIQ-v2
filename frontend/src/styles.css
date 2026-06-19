@@ -768,12 +768,11 @@ table.siq-perf td { padding: 7px 10px; border-bottom: 1px solid #f0f1f3; font-va
 .siq-pillar-pct { width: 42px; text-align: right; font-size: 11px; font-weight: 700; }
 
 /* ---- HR profile (SafeHR-style) ---------------------------------------- */
-:root { --hr-accent: #1668c4; }
+:root { --hr-accent: var(--accent); }
 .hr-profile { max-width: 1120px; margin: 0 auto; padding: 18px 22px 60px; }
 .hr-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; box-shadow: var(--shadow); }
-.hr-head { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 600; color: var(--hr-accent); }
-.hr-head svg { color: var(--hr-accent); }
-.hr-subhead { color: var(--text-soft); font-size: 13px; margin: 4px 0 0 30px; text-transform: capitalize; }
+.hr-head { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; color: var(--text); }
+.hr-subhead { color: var(--text-soft); font-size: 13px; margin: 4px 0 0 0; text-transform: capitalize; }
 
 .hr-tabgrid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin: 20px 0 26px; }
 .hr-tab { border: 1px solid var(--border); border-radius: 7px; background: #fff; padding: 9px 6px; font-size: 12.5px; font-weight: 600;

@@ -276,17 +276,16 @@ def _profile(dpd, mpd, opd, days) -> str:
     return "Developing"
 
 
-def _holiday_coverage(today: date) -> dict:
-    """Who's off during the upcoming working week (next Mon–Fri), from the Holiday Tracker."""
-    if not trackers.holiday_configured():
-        return {"connected": False}
+def _holiday_coverage(db, today: date) -> dict:
+    """Who's off during the upcoming working week (next Mon–Fri), from RepIQ's own leave data."""
+    from ...modules.hr import leave as hr_leave
     days_to_mon = (7 - today.weekday()) % 7 or 7
     start = today + timedelta(days=days_to_mon)
     end = start + timedelta(days=4)                       # Mon..Fri
-    rows = [h for h in trackers.holiday_rows() if start <= h["date"] <= end]
+    rows = hr_leave.leave_rows(db, start, end)
     by: dict[str, dict] = {}
     for h in rows:
-        e = by.setdefault(h["name"], {"name": h["name"].title(), "days": [], "fullDays": 0})
+        e = by.setdefault(h["name"], {"name": h["name"], "days": [], "fullDays": 0})
         e["days"].append({"date": h["date"].isoformat(), "label": h["date"].strftime("%a %d %b"),
                           "absence": h["label"], "half": h["half"]})
         if not h["half"]:
@@ -436,23 +435,9 @@ def match_debug(db) -> dict:
 
 
 def holiday_calendar_view(db, year: int, month: int, team: str | None = None) -> dict:
-    """Holiday calendar grid filtered to registered (active) app users only — leavers and
-    non-app names are dropped — with each person's team, plus an optional team filter."""
-    grid = trackers.holiday_calendar(year, month)
-    if not grid.get("connected") or not grid.get("found"):
-        return {**grid, "teamsAvailable": [], "team": "all"}
-    users = db.query(User).filter(User.active.is_(True)).all()
-    people = []
-    for p in grid.get("people", []):
-        u = next((u for u in users if user_agent_match(u, p["name"])), None)
-        if not u:
-            continue                                  # leaver / not registered in the app
-        people.append({**p, "name": u.name, "team": (u.team.name if u.team else "No team")})
-    teams_available = sorted({p["team"] for p in people})
-    team_l = (team or "").strip().lower()
-    if team_l and team_l not in ("", "all", "all teams"):
-        people = [p for p in people if p["team"].lower() == team_l]
-    return {**grid, "people": people, "teamsAvailable": teams_available, "team": team_l or "all"}
+    """Holiday calendar grid (active app users), built from RepIQ's own leave data."""
+    from ...modules.hr import leave as hr_leave
+    return hr_leave.leave_calendar(db, year, month, team)
 
 
 def manager_dashboard(db, period: str = "month", team: str | None = None) -> dict:
@@ -503,6 +488,6 @@ def manager_dashboard(db, period: str = "month", team: str | None = None) -> dic
         "performance": perf,
         "bcConversion": bc,
         "activity": activity,
-        "holiday": _holiday_coverage(today),
+        "holiday": _holiday_coverage(db, today),
         "intelligence": ai,
     }

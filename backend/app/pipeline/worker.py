@@ -403,6 +403,7 @@ def _ingestion_loop() -> None:
     last_poll = datetime.min
     last_ms_poll = datetime.min
     last_housekeeping = datetime.min
+    last_holiday_sync = datetime.min
     while True:
         try:
             db = SessionLocal()
@@ -424,6 +425,17 @@ def _ingestion_loop() -> None:
                         poll_teams_recordings(db)
                     except Exception:
                         log.exception("Teams poll failed")
+                # Keep in-app leave data fresh from the Holiday Tracker (the app now reads its
+                # own LeaveRecord rows everywhere, not the tracker directly). Runs on boot + 6-hourly.
+                if datetime.utcnow() - last_holiday_sync > timedelta(hours=6):
+                    last_holiday_sync = datetime.utcnow()
+                    try:
+                        from ..modules.hr.imports import sync_holiday_from_tracker
+                        from ..services.salesiq import trackers as _trk
+                        if _trk.holiday_configured():
+                            sync_holiday_from_tracker(db, None, None)
+                    except Exception:
+                        log.exception("holiday sync failed")
                 if datetime.utcnow() - last_housekeeping > timedelta(hours=1):
                     last_housekeeping = datetime.utcnow()
                     try:

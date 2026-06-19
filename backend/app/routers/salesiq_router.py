@@ -53,10 +53,8 @@ def manager(period: str = Query("month"), team: str | None = None,
 @router.get("/holiday-calendar")
 def holiday_calendar(ym: str | None = None, team: str | None = None,
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Month holiday grid (registered app users only) for the calendar popup (managers/admin).
-    ym = YYYY-MM; optional team filter."""
-    if role_for_user(db, user) != "manager":
-        raise HTTPException(403, "Not permitted")
+    """Month holiday grid (registered app users) for the calendar popup. Visible to every
+    signed-in user — a company holiday calendar. ym = YYYY-MM; optional team filter."""
     from datetime import date
     if ym and len(ym) >= 7:
         y, m = int(ym[:4]), int(ym[5:7])

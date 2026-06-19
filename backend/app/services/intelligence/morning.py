@@ -125,20 +125,18 @@ def _predictor(perf: dict, days_remaining: int) -> dict:
     }
 
 
-def _days_left_after_leave(user: User, today: date) -> tuple:
+def _days_left_after_leave(db, user: User, today: date) -> tuple:
     """Selling days remaining in the sales month, minus the user's booked annual leave."""
-    from ..salesiq import fincal, trackers
-    from ..salesiq.roles import user_agent_match
+    from ..salesiq import fincal
+    from ...modules.hr import leave as hr_leave
     base = fincal.days_remaining(today)
     leave = 0.0
     try:
-        if trackers.holiday_configured():
-            end = fincal.current_sales_month(today)["end"]
-            for r in trackers.holiday_rows():
-                d = r.get("date")
-                if (d and today <= d <= end and d.weekday() < 5
-                        and user_agent_match(user, r.get("name"))):
-                    leave += 0.5 if r.get("half") else 1.0
+        end = fincal.current_sales_month(today)["end"]
+        for r in hr_leave.user_leave(db, user.id, today, end):
+            d = r["date"]
+            if d.weekday() < 5:
+                leave += 0.5 if r["half"] else 1.0
     except Exception:
         leave = 0.0
     return base, round(leave, 1), max(0, int(round(base - leave)))
@@ -147,7 +145,7 @@ def _days_left_after_leave(user: User, today: date) -> tuple:
 def _section_c(db, user: User, role: str) -> dict:
     today = date.today()
     try:
-        base_days, leave_days, days_left = _days_left_after_leave(user, today)
+        base_days, leave_days, days_left = _days_left_after_leave(db, user, today)
         if role == "bc":
             d = bc_dashboard(db, user)
             perf = d.get("performance", {})

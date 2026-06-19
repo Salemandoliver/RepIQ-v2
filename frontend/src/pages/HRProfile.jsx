@@ -49,12 +49,8 @@ const SOON = {
   goals: "Goals & objectives are part of a later HR phase.",
 };
 
-const Flower = ({ size = 14 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="2.4" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
-    <path d="M12 3v18M5 6.5l14 11M19 6.5l-14 11" />
-  </svg>
-);
+// Action links are plain text (consistent with the rest of the app) — no decorative icon.
+const Flower = () => null;
 
 function fmtDate(v) {
   if (!v) return "—";

@@ -188,31 +188,27 @@ def _trackers_context(db, user: User, role: str) -> str:
             if op.get("connected"):
                 out.append(f"OPPORTUNITIES (this month): {op.get('oppsMTD')} of {op.get('target')} target; "
                            f"{op.get('f2fMTD')} F2F.")
-        if trackers.holiday_configured():
-            today = date.today()
-            mine = sorted({r["date"] for r in trackers.holiday_rows()
-                           if r.get("date") and r["date"] >= today and user_agent_match(user, r.get("name"))})
-            if mine:
-                out.append("YOUR BOOKED LEAVE (upcoming): "
-                           + ", ".join(x.strftime("%a %d %b") for x in mine[:14]) + ".")
+        from ...modules.hr import leave as hr_leave
+        today = date.today()
+        mine = sorted({r["date"] for r in hr_leave.user_leave(db, user.id, start=today)})
+        if mine:
+            out.append("YOUR BOOKED LEAVE (upcoming): "
+                       + ", ".join(x.strftime("%a %d %b") for x in mine[:14]) + ".")
     except Exception:
         pass
     return "\n".join(out)
 
 
 def _team_holiday_context(db) -> str:
-    from ..salesiq import trackers
+    from ...modules.hr import leave as hr_leave
     try:
-        if not trackers.holiday_configured():
-            return ""
         today = date.today()
         wk_end = today + timedelta(days=6)
-        off_today = sorted({r["name"] for r in trackers.holiday_rows() if r.get("date") == today})
+        week_rows = hr_leave.leave_rows(db, today, wk_end)
+        off_today = sorted({r["name"] for r in week_rows if r["date"] == today})
         off_week: dict = {}
-        for r in trackers.holiday_rows():
-            d = r.get("date")
-            if d and today <= d <= wk_end:
-                off_week[r["name"]] = off_week.get(r["name"], 0) + 1
+        for r in week_rows:
+            off_week[r["name"]] = off_week.get(r["name"], 0) + 1
         lines = []
         if off_today:
             lines.append("OFF TODAY: " + ", ".join(off_today) + ".")
