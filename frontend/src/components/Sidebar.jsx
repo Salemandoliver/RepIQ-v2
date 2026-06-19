@@ -80,7 +80,7 @@ export default function Sidebar({ user }) {
     <aside className="sidebar">
       <NavLink to="/" className="sidebar-logo" title="RepIQ">
         {companyLogo
-          ? <img src={companyLogo} alt="Company logo" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#fff", borderRadius: "inherit", padding: 3, boxSizing: "border-box" }} />
+          ? <img src={companyLogo} alt="Company logo" className="sidebar-company-logo" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#fff", borderRadius: "inherit", padding: 3, boxSizing: "border-box" }} />
           : "IQ"}
       </NavLink>
       <nav className="sidebar-nav">

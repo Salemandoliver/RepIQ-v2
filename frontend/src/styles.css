@@ -54,6 +54,9 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   color: #fff; font-weight: 800; font-size: 15px; letter-spacing: -0.5px;
   margin-bottom: 18px; flex-shrink: 0;
 }
+/* Company logo gently enlarges on hover so the small mark is easier to read */
+.sidebar-company-logo { transition: transform 0.15s ease; transform-origin: center; }
+.sidebar-logo:hover .sidebar-company-logo { transform: scale(1.35); }
 .sidebar-nav { display: flex; flex-direction: column; gap: 6px; align-items: center; flex: 1; width: 100%; }
 .sidebar-link {
   width: 44px; height: 44px; border-radius: 10px;
