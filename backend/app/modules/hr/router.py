@@ -221,6 +221,37 @@ def holiday_sync(request: Request, db: Session = Depends(get_db), user: User = D
     return hr_imports.sync_holiday_from_tracker(db, user, request)
 
 
+@router.post("/employees/{user_id}/leave")
+def add_leave(user_id: int, body: dict, request: Request,
+              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return svc.record_leave(db, emp, body or {}, scopes, user, request)
+
+
+@router.delete("/employees/{user_id}/leave/{leave_id}")
+def remove_leave(user_id: int, leave_id: str, request: Request,
+                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return svc.delete_leave(db, emp, leave_id, scopes, user, request)
+
+
+@router.get("/employees/{user_id}/history")
+def employee_history(user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return {"history": svc.history(db, emp, scopes)}
+
+
+@router.put("/employees/{user_id}/emergency-contacts/{ec_id}")
+def edit_employee_emergency(user_id: int, ec_id: str, body: dict, request: Request,
+                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return svc.update_emergency(db, emp, ec_id, body or {}, scopes, user, request)
+
+
 @router.post("/employees/{user_id}/emergency-contacts")
 def add_employee_emergency(user_id: int, body: dict, request: Request,
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):

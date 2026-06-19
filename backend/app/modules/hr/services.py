@@ -206,8 +206,8 @@ def holiday_view(emp: Employee, scopes: set[str]) -> dict:
                 taken_holiday += lr.portion or 1.0
             elif lr.leave_type == "Sick":
                 taken_sick += lr.portion or 1.0
-            recent.append({"date": lr.leave_date.isoformat(), "portion": lr.portion,
-                           "type": lr.leave_type, "code": lr.code})
+            recent.append({"id": str(lr.id), "date": lr.leave_date.isoformat(), "portion": lr.portion,
+                           "type": lr.leave_type, "code": lr.code, "source": lr.source, "notes": lr.notes})
     allowance = (base.get("allowance_days") or 0.0) + (base.get("carried_over_days") or 0.0)
     recent.sort(key=lambda r: r["date"], reverse=True)
     base.update({
@@ -234,6 +234,87 @@ def update_holiday(db, emp, changes: dict, scopes, actor, request):
             record_audit(db, actor=actor, action="UPDATE", entity_type="employee_holiday",
                          entity_id=emp.id, field=field, old=str(old), new=str(new), request=request)
     db.commit()
+
+
+_LEAVE_TYPES = {"Holiday", "Sick", "Compassionate", "Unpaid", "Custom", "Appointment", "Other"}
+
+
+def can_record_absence(scopes: set[str]) -> bool:
+    """Admins and the person's team manager may record sickness/absence (never the person
+    themselves — recording sickness is a management action)."""
+    return bool({"admin", "manager.team"} & scopes)
+
+
+def record_leave(db, emp, data: dict, scopes, actor, request) -> dict:
+    if not can_record_absence(scopes):
+        raise HTTPException(403, "Only a manager or admin can record absence")
+    from datetime import date
+    raw = (data or {}).get("leave_date")
+    try:
+        d = date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "leave_date must be YYYY-MM-DD")
+    ltype = (data or {}).get("leave_type") or "Sick"
+    if ltype not in _LEAVE_TYPES:
+        raise HTTPException(400, f"leave_type must be one of {', '.join(sorted(_LEAVE_TYPES))}")
+    # NB: don't test `in (... True)` — Python treats 1.0 == True, so a full day would match.
+    portion = 0.5 if str((data or {}).get("portion")).lower() in ("0.5", "half", ".5") else 1.0
+    lr = LeaveRecord(employee_id=emp.id, leave_date=d, portion=portion, leave_type=ltype,
+                     source="manual", notes=(data or {}).get("notes"))
+    db.add(lr)
+    record_audit(db, actor=actor, action="CREATE", entity_type="employee_leave",
+                 entity_id=emp.id, field="leave", new=f"{ltype} {d.isoformat()}", request=request)
+    db.commit()
+    db.refresh(emp)
+    return holiday_view(emp, scopes)
+
+
+def delete_leave(db, emp, leave_id: str, scopes, actor, request) -> dict:
+    if not can_record_absence(scopes):
+        raise HTTPException(403, "Only a manager or admin can change absence")
+    lr = db.get(LeaveRecord, leave_id)
+    if not lr or lr.employee_id != emp.id:
+        raise HTTPException(404, "Leave record not found")
+    db.delete(lr)
+    record_audit(db, actor=actor, action="DELETE", entity_type="employee_leave",
+                 entity_id=emp.id, field="leave", old=f"{lr.leave_type} {lr.leave_date.isoformat()}", request=request)
+    db.commit()
+    db.refresh(emp)
+    return holiday_view(emp, scopes)
+
+
+def update_emergency(db, emp, ec_id: str, data: dict, scopes, actor, request) -> list[dict]:
+    if not perms.EMERGENCY.can_write("self.emergency", scopes):
+        raise HTTPException(403, "Not permitted")
+    ec = db.get(EmployeeEmergencyContact, ec_id)
+    if not ec or ec.employee_id != emp.id:
+        raise HTTPException(404, "Emergency contact not found")
+    for f in ("full_name", "relation", "phone_primary", "phone_secondary", "email", "address", "notes"):
+        if f in (data or {}):
+            setattr(ec, f, data[f])
+    record_audit(db, actor=actor, action="UPDATE", entity_type="employee_emergency_contact",
+                 entity_id=emp.id, field="full_name", new=ec.full_name, request=request)
+    db.commit()
+    db.refresh(emp)
+    return emergency_view(emp, scopes)
+
+
+def history(db, emp, scopes, limit: int = 100) -> list[dict]:
+    """Change history (audit rows) for this employee record — admin or team manager only."""
+    if not ({"admin", "manager.team"} & scopes):
+        raise HTTPException(403, "Not permitted")
+    from ...core.audit import AuditLog
+    rows = (db.query(AuditLog).filter(AuditLog.entity_id == str(emp.id))
+            .order_by(AuditLog.ts.desc()).limit(limit).all())
+    out = []
+    for r in rows:
+        actor_name = None
+        if r.actor_user_id:
+            u = db.get(User, r.actor_user_id)
+            actor_name = u.name if u else None
+        out.append({"ts": r.ts.isoformat(), "actor": actor_name, "action": r.action,
+                    "entity": r.entity_type, "field": r.field, "old": r.old_value, "new": r.new_value})
+    return out
 
 
 def composite(db: Session, emp: Employee, scopes: set[str]) -> dict:

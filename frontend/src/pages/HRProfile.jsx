@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import api from "../api";
-import { Spinner, EmptyState } from "../components/ui.jsx";
+import { Spinner, EmptyState, Modal } from "../components/ui.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 /* HR employee profile — SafeHR-style layout: a full tab set, each tab laid out as content
@@ -139,10 +139,15 @@ export default function HRProfile() {
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [userOptions, setUserOptions] = useState([]);
+  const [absForm, setAbsForm] = useState(null);   // record-absence modal
+  const [histRows, setHistRows] = useState(null);  // history modal
+  const [ecEdit, setEcEdit] = useState(null);      // edit-emergency modal
 
   const isAdmin = me?.role === "admin";
+  const isManager = me?.sales_role === "manager";
   const isSelf = Number(me?.id) === Number(id);
   const canEdit = isAdmin || isSelf;
+  const canRecordAbsence = isAdmin || (isManager && !isSelf);
 
   const load = () => {
     setLoading(true);
@@ -199,6 +204,37 @@ export default function HRProfile() {
     if (!window.confirm("Remove this emergency contact?")) return;
     try { await api.del(`/api/v1/hr/employees/${id}/emergency-contacts/${ecId}`); toast("Removed", "success"); load(); }
     catch (e) { toast(e.message || "Could not remove", "error"); }
+  };
+
+  const saveAbsence = async () => {
+    if (!absForm?.leave_date) { toast("Pick a date", "error"); return; }
+    setSaving(true);
+    try {
+      await api.post(`/api/v1/hr/employees/${id}/leave`, absForm);
+      toast("Absence recorded", "success"); setAbsForm(null); load();
+    } catch (e) { toast(e.message || "Could not record", "error"); } finally { setSaving(false); }
+  };
+  const removeLeave = async (leaveId) => {
+    if (!window.confirm("Remove this absence record?")) return;
+    try { await api.del(`/api/v1/hr/employees/${id}/leave/${leaveId}`); toast("Removed", "success"); load(); }
+    catch (e) { toast(e.message || "Could not remove", "error"); }
+  };
+  const openHistory = async () => {
+    try { const r = await api.get(`/api/v1/hr/employees/${id}/history`); setHistRows(r.history || []); }
+    catch (e) { toast(e.message || "Could not load history", "error"); }
+  };
+  const saveEcEdit = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/api/v1/hr/employees/${id}/emergency-contacts/${ecEdit.id}`, ecEdit);
+      toast("Saved", "success"); setEcEdit(null); load();
+    } catch (e) { toast(e.message || "Could not save", "error"); } finally { setSaving(false); }
+  };
+  const changeJobTitle = async () => {
+    const jt = window.prompt("New job title:", s.jobTitle || "");
+    if (jt == null) return;
+    try { await api.patch(`/api/admin/users/${id}`, { job_title: jt.trim() }); toast("Job title updated", "success"); load(); }
+    catch (e) { toast(e.message || "Could not update", "error"); }
   };
 
   if (loading) return <div className="hr-profile"><Spinner /></div>;
@@ -258,13 +294,15 @@ export default function HRProfile() {
               </>
             ) : <div className="muted small">No emergency contact on file.</div>}
           </Section>
-          <Actions items={canEdit ? [
-            { label: "Edit personal details", onClick: () => startEdit("personal", p) },
-            { label: "Edit contact details", onClick: () => startEdit("contact", c) },
-            { label: "Add emergency contact", onClick: addEmergency },
+          <Actions items={[
+            canEdit && { label: "Edit personal details", onClick: () => startEdit("personal", p) },
+            canEdit && { label: "Edit contact details", onClick: () => startEdit("contact", c) },
+            canEdit && (ec ? { label: "Edit emergency contact", onClick: () => setEcEdit({ ...ec }) } : { label: "Add emergency contact", onClick: addEmergency }),
+            canEdit && ec && { label: "Add another emergency contact", onClick: addEmergency },
             isSelf && { label: "Edit employee photo", onClick: () => navigate("/account") },
-            { label: "Edit about me", onClick: () => startEdit("personal", p) },
-          ].filter(Boolean) : []} />
+            canEdit && { label: "Edit about me", onClick: () => startEdit("personal", p) },
+            (isAdmin || isManager) && { label: "View personal details history", onClick: openHistory },
+          ].filter(Boolean)} />
         </div>
       );
     }
@@ -280,7 +318,10 @@ export default function HRProfile() {
           <Section title="Management">
             <DL rows={[["Reports to", role.reports_to_name]]} />
           </Section>
-          <Actions items={isAdmin ? [{ label: "View / edit role", onClick: () => startEdit("role", role) }] : []} />
+          <Actions items={isAdmin ? [
+            { label: "View / edit role", onClick: () => startEdit("role", role) },
+            { label: "Change job title", onClick: changeJobTitle },
+          ] : []} />
         </div>
       );
     }
@@ -372,19 +413,30 @@ export default function HRProfile() {
       const sickDays = hol?.takenSick ?? 0;
       const otherAbs = recs.filter((r) => r.type !== "Holiday" && r.type !== "Sick");
       const name = s.knownAs || (s.name || "This person").split(" ")[0];
+      const absList = recs.filter((r) => r.type !== "Holiday");
       return (
         <div className="hr-cols">
           <Section title="Absence">
             <p style={{ marginTop: 0 }}>{name} has {otherAbs.length ? `${otherAbs.reduce((a, r) => a + (r.portion || 1), 0)} day(s) of other leave` : "no non-holiday absence"} this leave year.</p>
             <p className="muted small">Holiday taken: {hol?.takenHoliday ?? 0} day(s).</p>
+            {absList.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div className="hr-field-label" style={{ marginBottom: 6 }}>Records this year</div>
+                {absList.map((r) => (
+                  <div key={r.id} className="flex small" style={{ justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span>{fmtDate(r.date)}{r.portion === 0.5 ? " ½" : ""} · <b>{r.type}</b>{r.notes ? <span className="muted"> — {r.notes}</span> : ""}</span>
+                    {canRecordAbsence && r.source !== "tracker" && <a className="hr-action" style={{ padding: 0 }} onClick={() => removeLeave(r.id)}>Remove</a>}
+                  </div>
+                ))}
+              </div>
+            )}
           </Section>
           <Section title="Sickness">
             <p style={{ marginTop: 0 }}>{name} has been off sick {sick.length} time{sick.length === 1 ? "" : "s"} for a total of {sickDays} day{sickDays === 1 ? "" : "s"} this leave year.</p>
           </Section>
           <Actions items={[
-            { label: "Record sickness / absence", disabled: true },
-            { label: "View sickness / absence", disabled: true },
-            { label: "Record an appointment", disabled: true },
+            canRecordAbsence && { label: "Record sickness / absence", onClick: () => setAbsForm({ leave_date: "", leave_type: "Sick", portion: 1.0, notes: "" }) },
+            !canRecordAbsence && { label: "Record sickness / absence", disabled: true },
           ]} />
         </div>
       );
@@ -421,6 +473,54 @@ export default function HRProfile() {
         </div>
         <div className="hr-body">{renderTab()}</div>
       </div>
+
+      {absForm && (
+        <Modal title="Record sickness / absence" onClose={() => setAbsForm(null)}
+          footer={<>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAbsForm(null)} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={saveAbsence} disabled={saving}>{saving ? "Saving…" : "Record"}</button>
+          </>}>
+          <label className="field"><span>Date</span>
+            <input className="input" type="date" value={absForm.leave_date} onChange={(e) => setAbsForm((f) => ({ ...f, leave_date: e.target.value }))} /></label>
+          <label className="field"><span>Type</span>
+            <select className="input" value={absForm.leave_type} onChange={(e) => setAbsForm((f) => ({ ...f, leave_type: e.target.value }))}>
+              {["Sick", "Holiday", "Compassionate", "Unpaid", "Appointment", "Custom", "Other"].map((t) => <option key={t} value={t}>{t}</option>)}
+            </select></label>
+          <label className="flex" style={{ gap: 8, margin: "8px 0" }}>
+            <input type="checkbox" checked={absForm.portion === 0.5} onChange={(e) => setAbsForm((f) => ({ ...f, portion: e.target.checked ? 0.5 : 1.0 }))} />
+            <span className="small">Half day</span></label>
+          <label className="field"><span>Notes (optional)</span>
+            <input className="input" value={absForm.notes} onChange={(e) => setAbsForm((f) => ({ ...f, notes: e.target.value }))} /></label>
+        </Modal>
+      )}
+
+      {ecEdit && (
+        <Modal title="Edit emergency contact" onClose={() => setEcEdit(null)}
+          footer={<>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEcEdit(null)} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={saveEcEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+          </>}>
+          {[["full_name", "Name"], ["relation", "Relationship"], ["phone_primary", "Phone"], ["phone_secondary", "Mobile"], ["email", "Email"], ["address", "Address"]].map(([k, lbl]) => (
+            <label key={k} className="field"><span>{lbl}</span>
+              <input className="input" value={ecEdit[k] || ""} onChange={(e) => setEcEdit((x) => ({ ...x, [k]: e.target.value }))} /></label>
+          ))}
+        </Modal>
+      )}
+
+      {histRows && (
+        <Modal title="Change history" wide onClose={() => setHistRows(null)}>
+          {histRows.length === 0 ? <div className="muted small">No changes recorded yet.</div> : (
+            <div style={{ maxHeight: 420, overflowY: "auto" }}>
+              {histRows.map((h, i) => (
+                <div key={i} className="small" style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                  <div><b>{h.action}</b> {h.field ? <span className="muted">· {h.field}</span> : ""} {h.new ? <>→ {h.new}</> : ""}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>{new Date(h.ts).toLocaleString("en-GB")}{h.actor ? ` · ${h.actor}` : ""}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
