@@ -35,16 +35,11 @@ const SAVE_PATH = { personal: "personal", contact: "contact", role: "role", cont
 
 // Tab set + order mirrors SafeHR. `true` = disabled (greyed, not selectable) until that phase lands.
 const TABS = [
-  ["personal", "Personal Details"], ["role", "Role"], ["location", "Location"], ["contract", "Contract"],
-  ["pay", "Pay"], ["benefits", "Benefits"], ["hours", "Hours"], ["holiday", "Holiday"],
-  ["performance", "Performance"], ["assets", "Assets"], ["documents", "Documents"], ["feedback", "Feedback", true],
-  ["absence", "Sick & Absence"], ["training", "Training"], ["qualifications", "Qualifications"], ["goals", "Goals"],
+  ["personal", "Personal Details"], ["role", "Role"], ["contract", "Contract"], ["hours", "Hours"],
+  ["holiday", "Holiday"], ["absence", "Sick & Absence"], ["performance", "Performance"], ["training", "Training"],
+  ["qualifications", "Qualifications"], ["goals", "Goals"], ["documents", "Documents"],
 ];
-const SOON = {
-  location: "Work location and home address detail will expand in a later HR phase.",
-  benefits: "Benefits & perks (pension, healthcare, etc.) are part of a later HR phase.",
-  assets: "Company assets issued to this person will be listed here.",
-};
+const SOON = {};
 
 // Action links are plain text (consistent with the rest of the app) — no decorative icon.
 const Flower = () => null;
@@ -410,17 +405,6 @@ export default function HRProfile() {
       );
     }
 
-    if (tab === "location") {
-      return (
-        <div className="hr-cols">
-          <Section title="Work location"><DL rows={[["Location", cd.work_location], ["Working pattern", cd.working_pattern]]} /></Section>
-          <Section title="Home address"><DL rows={[["Address", homeAddress()]]} /></Section>
-          <Actions items={isAdmin ? [{ label: "Edit work location", onClick: () => { setTab("contract"); startEdit("contract", cd); } },
-            { label: "Edit home address", onClick: () => startEdit("contact", c) }] : []} />
-        </div>
-      );
-    }
-
     if (tab === "contract" || tab === "hours") {
       if (editing === "contract") return <div className="hr-edit"><h3 className="hr-sec-title">Edit contract</h3><EditGrid labels={CONTRACT_LABELS} draft={draft} setDraft={setDraft} /><SaveBar /></div>;
       if (tab === "hours") {
@@ -674,14 +658,6 @@ export default function HRProfile() {
           ].filter(Boolean)} />
         </div>
       );
-    }
-
-    if (tab === "pay") {
-      const canSeePay = isAdmin || (me?.scopes || []).includes("financial");
-      return <div className="hr-cols"><div className="hr-col">
-        <EmptyState icon="💷" title="Pay & financial"
-          sub={canSeePay ? "Salary, pay history and bank details land in the financial Pay phase (encrypted, admin-only)." : "Pay information is restricted."} />
-      </div></div>;
     }
 
     return <div className="hr-cols"><div className="hr-col"><EmptyState icon="🚧" title="Coming soon" /></div></div>;
