@@ -82,7 +82,17 @@ def daily_plan(db, user: User) -> dict:
     except Exception:
         pass
     n = len(sales_calls)
-    if n == 0:
+    on_leave_yday = []
+    try:
+        from ...modules.hr import leave as hr_leave
+        on_leave_yday = hr_leave.user_leave(db, user.id, yday, yday)
+    except Exception:
+        on_leave_yday = []
+    if on_leave_yday and n == 0:
+        lt = (on_leave_yday[0].get("type") or "leave").lower()
+        brief = (f"Good morning, {first}. You were on {lt} on {yday.strftime('%a %d %b')} — "
+                 "nothing to review from yesterday. Welcome back; here's your plan for today.")
+    elif n == 0:
         brief = (f"Good morning, {first}. No sales calls logged yesterday — a clean slate "
                  "today. Start with your priority list below.")
     else:

@@ -18,19 +18,26 @@ from .models import Employee, LeaveRecord, LeaveRequest
 _TYPES = {"Holiday", "Sick", "Compassionate", "Unpaid", "Custom", "Appointment", "Other"}
 
 
+def _is_working(d: date, bh: set) -> bool:
+    return d.weekday() < 5 and d not in bh
+
+
 def working_days(start: date, end: date, start_half: bool, end_half: bool) -> float:
-    """Mon–Fri days in the inclusive range, less half-days at the ends."""
+    """Mon–Fri days in the inclusive range, excluding bank holidays, less half-days at the ends."""
     if end < start:
         return 0.0
-    wd = [start + timedelta(days=i) for i in range((end - start).days + 1) if (start + timedelta(days=i)).weekday() < 5]
+    from ...core import bank_holidays
+    bh = bank_holidays.all_dates()
+    wd = [start + timedelta(days=i) for i in range((end - start).days + 1)
+          if _is_working(start + timedelta(days=i), bh)]
     if not wd:
         return 0.0
     if start == end:
         return 0.5 if (start_half or end_half) else 1.0
     total = float(len(wd))
-    if start_half and start.weekday() < 5:
+    if start_half and _is_working(start, bh):
         total -= 0.5
-    if end_half and end.weekday() < 5:
+    if end_half and _is_working(end, bh):
         total -= 0.5
     return max(total, 0.0)
 
@@ -109,9 +116,11 @@ def pending_for_approver(db: Session, approver: User) -> list[dict]:
 
 
 def _materialise(db: Session, req: LeaveRequest) -> None:
+    from ...core import bank_holidays
+    bh = bank_holidays.all_dates()
     d = req.start_date
     while d <= req.end_date:
-        if d.weekday() < 5:
+        if _is_working(d, bh):
             if req.start_date == req.end_date:
                 half = req.start_half or req.end_half
             else:

@@ -63,11 +63,15 @@ def _cell_code(leave_type: str, half: bool) -> str:
 
 def leave_calendar(db: Session, year: int, month: int, team: str | None = None) -> dict:
     """Month grid (all active users × days) for the calendar popup, built from in-app leave."""
+    from ...core import bank_holidays
+    bh_days = {d.day for d in bank_holidays.in_range(date(year, month, 1),
+                                                     date(year, month, _cal.monthrange(year, month)[1]))}
     ndays = _cal.monthrange(year, month)[1]
     days = []
     for d in range(1, ndays + 1):
         dt = date(year, month, d)
-        days.append({"day": d, "weekday": dt.strftime("%a"), "weekend": dt.weekday() >= 5})
+        days.append({"day": d, "weekday": dt.strftime("%a"),
+                     "weekend": dt.weekday() >= 5, "bankHoliday": d in bh_days})
 
     rows = leave_rows(db, date(year, month, 1), date(year, month, ndays))
     by_user: dict[int, dict] = {}
@@ -78,7 +82,10 @@ def leave_calendar(db: Session, year: int, month: int, team: str | None = None) 
     people = []
     for u in users:
         team_name = (u.team.name if getattr(u, "team", None) else "No team")
-        people.append({"name": u.name, "team": team_name, "cells": by_user.get(u.id, {})})
+        cells = dict(by_user.get(u.id, {}))
+        for bd in bh_days:                       # company-wide bank holidays show as 'B' for everyone
+            cells.setdefault(bd, "B")
+        people.append({"name": u.name, "team": team_name, "cells": cells})
 
     teams_available = sorted({p["team"] for p in people})
     team_l = (team or "").strip().lower()

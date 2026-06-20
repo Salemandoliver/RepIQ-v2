@@ -155,8 +155,12 @@ export default function HolidayCalendar() {
 
   return (
     <div className="page" style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 22px 60px" }}>
-      <div className="spread" style={{ marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>🗓️ Holiday Calendar</h1>
+      <div style={{ marginBottom: 6 }}>
+        <h1 style={{ margin: 0, fontSize: 24 }}>AdminIQ</h1>
+        <div className="muted small">Leave approvals &amp; the company holiday calendar. Performance reviews, 1-to-1s and goals live on each person's profile (People).</div>
+      </div>
+      <div className="spread" style={{ marginBottom: 18, flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+        <h3 style={{ margin: 0 }}>🗓️ Holiday calendar</h3>
         <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
           <div className="flex" style={{ gap: 8 }}>
             <button className="btn btn-outline" onClick={() => shift(-1)} aria-label="Previous month">‹</button>

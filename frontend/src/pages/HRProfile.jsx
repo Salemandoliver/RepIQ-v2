@@ -54,7 +54,7 @@ const Flower = () => null;
 function fmtDate(v) {
   if (!v) return "—";
   const d = new Date(v);
-  return isNaN(d) ? v : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return isNaN(d) ? v : d.toLocaleDateString("en-GB");   // dd/mm/yyyy
 }
 
 function DL({ rows }) {
@@ -140,6 +140,8 @@ export default function HRProfile() {
   const [docsData, setDocsData] = useState(null);  // documents tab payload
   const [uploadForm, setUploadForm] = useState(null);
   const [noteForm, setNoteForm] = useState(null);
+  const [leaveReqs, setLeaveReqs] = useState(null);
+  const [leaveForm, setLeaveForm] = useState(null);
 
   const isAdmin = me?.role === "admin";
   const isManager = me?.sales_role === "manager";
@@ -237,6 +239,25 @@ export default function HRProfile() {
 
   const loadDocs = () => api.get(`/api/v1/hr/employees/${id}/documents`).then(setDocsData).catch((e) => toast(e.message, "error"));
   useEffect(() => { if (tab === "documents" && !docsData) loadDocs(); /* eslint-disable-next-line */ }, [tab]);
+
+  const loadLeaveReqs = () => api.get(`/api/v1/hr/employees/${id}/leave-requests`).then((d) => setLeaveReqs(d.requests || [])).catch(() => setLeaveReqs([]));
+  useEffect(() => { if (tab === "holiday" && leaveReqs === null) loadLeaveReqs(); /* eslint-disable-next-line */ }, [tab]);
+  const submitLeaveReq = async () => {
+    if (!leaveForm?.start_date) { toast("Pick a start date", "error"); return; }
+    setSaving(true);
+    try {
+      await api.post(`/api/v1/hr/employees/${id}/leave-requests`, {
+        leave_type: leaveForm.leave_type, start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date || leaveForm.start_date, start_half: leaveForm.start_half, end_half: leaveForm.end_half, reason: leaveForm.reason,
+      });
+      toast("Leave request submitted", "success"); setLeaveForm(null); loadLeaveReqs(); load();
+    } catch (e) { toast(e.message || "Could not submit", "error"); } finally { setSaving(false); }
+  };
+  const cancelLeaveReq = async (rid) => {
+    if (!window.confirm("Cancel this leave request?")) return;
+    try { await api.post(`/api/v1/hr/leave-requests/${rid}/cancel`, {}); toast("Cancelled", "success"); loadLeaveReqs(); load(); }
+    catch (e) { toast(e.message, "error"); }
+  };
 
   const uploadDoc = async () => {
     if (!uploadForm?.file) { toast("Choose a file", "error"); return; }
@@ -434,9 +455,23 @@ export default function HRProfile() {
                 ))}
               </div>
             )}
+            {(leaveReqs || []).length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div className="hr-field-label" style={{ marginBottom: 6 }}>Leave requests</div>
+                {leaveReqs.map((r) => (
+                  <div key={r.id} className="flex small" style={{ justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span>{fmtDate(r.startDate)}{r.endDate !== r.startDate ? ` – ${fmtDate(r.endDate)}` : ""} · <b>{r.leaveType}</b> · {r.days}d</span>
+                    <span className="flex" style={{ gap: 10 }}>
+                      <span style={{ fontWeight: 600, textTransform: "capitalize", color: r.status === "approved" ? "var(--green)" : r.status === "declined" ? "var(--red)" : r.status === "pending" ? "var(--amber)" : "var(--text-faint)" }}>{r.status}</span>
+                      {(isSelf || canRecordAbsence) && (r.status === "pending" || r.status === "approved") && <a className="hr-action" style={{ padding: 0 }} onClick={() => cancelLeaveReq(r.id)}>Cancel</a>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <Actions items={[
-            isSelf && { label: "Request leave", onClick: () => navigate("/holiday") },
+            (isSelf || canRecordAbsence) && { label: "Request leave", onClick: () => setLeaveForm({ leave_type: "Holiday", start_date: "", end_date: "", start_half: false, end_half: false, reason: "" }) },
             isAdmin && { label: "Edit allowance", onClick: () => startEdit("holiday", hol) },
           ].filter(Boolean)} />
         </div>
@@ -620,6 +655,32 @@ export default function HRProfile() {
             <button className="btn btn-primary btn-sm" onClick={addNote} disabled={saving}>{saving ? "Saving…" : "Add note"}</button>
           </>}>
           <textarea className="input" rows={4} autoFocus value={noteForm} onChange={(e) => setNoteForm(e.target.value)} placeholder="Add a note to this person's file…" />
+        </Modal>
+      )}
+
+      {leaveForm && (
+        <Modal title="Request leave" onClose={() => setLeaveForm(null)}
+          footer={<>
+            <button className="btn btn-ghost btn-sm" onClick={() => setLeaveForm(null)} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={submitLeaveReq} disabled={saving}>{saving ? "Submitting…" : "Submit request"}</button>
+          </>}>
+          <label className="field"><span>Type</span>
+            <select className="input" value={leaveForm.leave_type} onChange={(e) => setLeaveForm((f) => ({ ...f, leave_type: e.target.value }))}>
+              {["Holiday", "Compassionate", "Unpaid", "Appointment", "Other"].map((t) => <option key={t} value={t}>{t}</option>)}
+            </select></label>
+          <div className="flex" style={{ gap: 10 }}>
+            <label className="field" style={{ flex: 1 }}><span>From</span>
+              <input className="input" type="date" value={leaveForm.start_date} onChange={(e) => setLeaveForm((f) => ({ ...f, start_date: e.target.value }))} /></label>
+            <label className="field" style={{ flex: 1 }}><span>To</span>
+              <input className="input" type="date" value={leaveForm.end_date} onChange={(e) => setLeaveForm((f) => ({ ...f, end_date: e.target.value }))} /></label>
+          </div>
+          <div className="flex" style={{ gap: 16, margin: "4px 0 8px" }}>
+            <label className="flex small" style={{ gap: 6 }}><input type="checkbox" checked={leaveForm.start_half} onChange={(e) => setLeaveForm((f) => ({ ...f, start_half: e.target.checked }))} /> First day half</label>
+            <label className="flex small" style={{ gap: 6 }}><input type="checkbox" checked={leaveForm.end_half} onChange={(e) => setLeaveForm((f) => ({ ...f, end_half: e.target.checked }))} /> Last day half</label>
+          </div>
+          <label className="field"><span>Reason (optional)</span>
+            <input className="input" value={leaveForm.reason} onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))} /></label>
+          <div className="muted small">Goes to your manager for approval.</div>
         </Modal>
       )}
 

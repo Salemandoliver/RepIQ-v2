@@ -26,6 +26,21 @@ def _yesterday_bounds(asof: date):
 
 def _section_a(db, user: User, asof: date) -> dict:
     yday, ys, ye = _yesterday_bounds(asof)
+    # If the rep was on annual leave on the reviewed day there's nothing to coach — leave a note
+    # rather than flagging zero activity.
+    try:
+        from ...modules.hr import leave as hr_leave
+        on_leave = hr_leave.user_leave(db, user.id, yday, yday)
+    except Exception:
+        on_leave = []
+    if on_leave:
+        ltype = (on_leave[0].get("type") or "leave")
+        return {"date": yday.isoformat(), "onLeave": True, "leaveType": ltype,
+                "note": f"You were on {ltype.lower()} on {yday.strftime('%a %d %b')} — nothing to review. "
+                        "Welcome back, hope you had a good break!",
+                "calls": 0, "dailyAvgCalls": None, "quality": None, "quality30dAvg": None,
+                "qualityDelta": None, "trend": "flat", "attentionReason": None, "talkTimeSec": 0,
+                "topStrength": None, "topImprovement": None, "coachingFocus": None, "ordersYesterday": 0}
     rows = load_call_metrics(db, user.id, ys, ye)
     agg = averages(rows)
     avg30 = rep_averages(db, user.id, days=30, asof=ys)  # excludes yesterday
@@ -133,6 +148,8 @@ def _days_left_after_leave(db, user: User, today: date) -> tuple:
     leave = 0.0
     try:
         end = fincal.current_sales_month(today)["end"]
+        from ...core import bank_holidays
+        base = max(0, base - bank_holidays.count_working_bank_holidays(today, end))   # bank holidays aren't selling days
         for r in hr_leave.user_leave(db, user.id, today, end):
             d = r["date"]
             if d.weekday() < 5:

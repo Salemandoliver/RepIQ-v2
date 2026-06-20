@@ -99,9 +99,9 @@ export default function Sidebar({ user }) {
         {link("/insights/coaching", "Coaching", CoachingIcon)}
         {link("/playlists", "Playlists", PlaylistIcon)}
         {link("/reports", "AI Reports", ReportsIcon)}
-        {link("/holiday", "Holiday Calendar", CalendarIcon)}
       </nav>
       <div className="sidebar-bottom">
+        {isManagerOrAdmin && link("/adminiq", "AdminIQ", CalendarIcon)}
         {isManagerOrAdmin && link("/people", "People", UsersIcon)}
         {user?.role === "admin" && link("/settings", "Settings", SettingsIcon)}
         <button
