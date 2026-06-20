@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Skeleton, EmptyState, Modal } from "../components/ui.jsx";
@@ -155,9 +155,12 @@ export default function HolidayCalendar() {
 
   return (
     <div className="page" style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 22px 60px" }}>
-      <div style={{ marginBottom: 6 }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>AdminIQ</h1>
-        <div className="muted small">Leave approvals &amp; the company holiday calendar. Performance reviews, 1-to-1s and goals live on each person's profile (People).</div>
+      <div className="spread" style={{ marginBottom: 6, gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24 }}>Admin Hub</h1>
+          <div className="muted small">Your profile, leave, goals &amp; reviews{canApprove ? ", plus your team's leave approvals and calendar" : ""}.</div>
+        </div>
+        {me && <button className="btn btn-primary" onClick={() => navigate(`/people/${me.id}`)}>Open my profile</button>}
       </div>
       <div className="spread" style={{ marginBottom: 18, flexWrap: "wrap", gap: 10, marginTop: 12 }}>
         <h3 style={{ margin: 0 }}>🗓️ Holiday calendar</h3>

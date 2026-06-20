@@ -114,10 +114,10 @@ export default function App() {
             <Route path="/" element={<RoleLanding />} />
             <Route path="/account" element={<Account />} />
             <Route path="/people" element={<PeopleArea><People /></PeopleArea>} />
-            <Route path="/people/:id" element={<PeopleArea><HRProfile /></PeopleArea>} />
+            <Route path="/people/:id" element={<HRProfile />} />
             <Route path="/today" element={<RepArea><MorningDashboard /></RepArea>} />
             <Route path="/command-centre" element={<ManagerArea><CommandCentre /></ManagerArea>} />
-            <Route path="/adminiq" element={<PeopleArea><HolidayCalendar /></PeopleArea>} />
+            <Route path="/adminhub" element={<HolidayCalendar />} />
             <Route path="/companyiq" element={<CompanyIQ />} />
             <Route path="/salesiq" element={<SalesIQ />} />
             <Route path="/library" element={<Library />} />

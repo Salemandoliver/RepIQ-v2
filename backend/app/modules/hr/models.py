@@ -209,6 +209,54 @@ class LeaveRequest(DomainBase, Base):
     employee = relationship("Employee")
 
 
+class PerformanceReview(DomainBase, Base):
+    """A 1-to-1, appraisal, probation review or check-in (brief §12 — Performance & reviews)."""
+    __tablename__ = "hr_performance_reviews"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    review_date: Mapped[date] = mapped_column(Date)
+    review_type: Mapped[str] = mapped_column(String(40), default="1-to-1")   # 1-to-1 | Appraisal | Probation | Check-in
+    rating: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_review_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    employee = relationship("Employee")
+
+
+class TrainingRecord(DomainBase, Base):
+    """A course or qualification (brief §12 — Training & Qualifications). ``kind`` separates the
+    two tabs; ``expiry_date`` drives renewal reminders later."""
+    __tablename__ = "hr_training_records"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="Training")        # Training | Qualification
+    name: Mapped[str] = mapped_column(String(160))
+    provider: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    completed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(40), nullable=True)    # Completed | In progress | Expired
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    employee = relationship("Employee")
+
+
+class Goal(DomainBase, Base):
+    """An objective / goal (brief §12 — Goals)."""
+    __tablename__ = "hr_goals"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="In progress")   # Not started | In progress | Achieved | Missed
+    progress: Mapped[int] = mapped_column(Integer, default=0)                 # 0–100
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    employee = relationship("Employee")
+
+
 class EmployeeEmergencyContact(DomainBase, Base):
     __tablename__ = "hr_employee_emergency_contacts"
 

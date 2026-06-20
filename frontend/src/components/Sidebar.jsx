@@ -101,7 +101,7 @@ export default function Sidebar({ user }) {
         {link("/reports", "AI Reports", ReportsIcon)}
       </nav>
       <div className="sidebar-bottom">
-        {isManagerOrAdmin && link("/adminiq", "AdminIQ", CalendarIcon)}
+        {link("/adminhub", "Admin Hub", CalendarIcon)}
         {isManagerOrAdmin && link("/people", "People", UsersIcon)}
         {user?.role === "admin" && link("/settings", "Settings", SettingsIcon)}
         <button

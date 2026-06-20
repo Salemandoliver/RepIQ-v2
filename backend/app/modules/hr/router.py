@@ -14,6 +14,7 @@ from ...models import User
 from . import documents as hr_docs
 from . import imports as hr_imports
 from . import leave_requests as hr_lr
+from . import records as hr_rec
 from . import services as svc
 from .models import Employee, EmployeeEmergencyContact
 
@@ -195,6 +196,60 @@ def put_employee_holiday(user_id: int, body: dict, request: Request,
     svc.update_holiday(db, emp, body or {}, scopes, user, request)
     db.refresh(emp)
     return svc.holiday_view(emp, scopes)
+
+
+# ----------------------------------------------------------------- performance / training / goals
+def _emp_scopes(db, user, user_id):
+    emp = svc.employee_by_user(db, user_id)
+    return emp, svc.viewer_scopes(db, user, emp)
+
+
+@router.get("/employees/{user_id}/reviews")
+def list_reviews(user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return {"reviews": hr_rec.list_reviews(db, emp, scopes), "canManage": hr_rec.can_manage(scopes)}
+
+
+@router.post("/employees/{user_id}/reviews")
+def add_review(user_id: int, body: dict, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return hr_rec.add_review(db, emp, body or {}, scopes, user, request)
+
+
+@router.get("/employees/{user_id}/training")
+def list_training(user_id: int, kind: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return {"records": hr_rec.list_training(db, emp, scopes, kind), "canManage": hr_rec.can_manage(scopes)}
+
+
+@router.post("/employees/{user_id}/training")
+def add_training(user_id: int, body: dict, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return hr_rec.add_training(db, emp, body or {}, scopes, user, request)
+
+
+@router.get("/employees/{user_id}/goals")
+def list_goals(user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return {"goals": hr_rec.list_goals(db, emp, scopes), "canManage": hr_rec.can_manage(scopes)}
+
+
+@router.post("/employees/{user_id}/goals")
+def add_goal(user_id: int, body: dict, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return hr_rec.add_goal(db, emp, body or {}, scopes, user, request)
+
+
+@router.patch("/employees/{user_id}/goals/{goal_id}")
+def update_goal(user_id: int, goal_id: str, body: dict, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return hr_rec.update_goal(db, emp, goal_id, body or {}, scopes, user, request)
+
+
+@router.delete("/employees/{user_id}/records/{kind}/{rec_id}")
+def delete_record(user_id: int, kind: str, rec_id: str, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp, scopes = _emp_scopes(db, user, user_id)
+    return hr_rec.delete_record(db, emp, kind, rec_id, scopes, user, request)
 
 
 # ----------------------------------------------------------------- documents + file notes

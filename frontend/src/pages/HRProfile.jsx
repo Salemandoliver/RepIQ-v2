@@ -38,14 +38,12 @@ const TABS = [
   ["personal", "Personal Details"], ["role", "Role"], ["location", "Location"], ["contract", "Contract"],
   ["pay", "Pay"], ["benefits", "Benefits"], ["hours", "Hours"], ["holiday", "Holiday"],
   ["performance", "Performance"], ["assets", "Assets"], ["documents", "Documents"], ["feedback", "Feedback", true],
-  ["absence", "Sick & Absence"], ["training", "Training", true], ["qualifications", "Qualifications", true], ["goals", "Goals"],
+  ["absence", "Sick & Absence"], ["training", "Training"], ["qualifications", "Qualifications"], ["goals", "Goals"],
 ];
 const SOON = {
   location: "Work location and home address detail will expand in a later HR phase.",
   benefits: "Benefits & perks (pension, healthcare, etc.) are part of a later HR phase.",
-  performance: "Performance reviews and 1-to-1s are part of a later HR phase.",
   assets: "Company assets issued to this person will be listed here.",
-  goals: "Goals & objectives are part of a later HR phase.",
 };
 
 // Action links are plain text (consistent with the rest of the app) — no decorative icon.
@@ -142,6 +140,8 @@ export default function HRProfile() {
   const [noteForm, setNoteForm] = useState(null);
   const [leaveReqs, setLeaveReqs] = useState(null);
   const [leaveForm, setLeaveForm] = useState(null);
+  const [recs, setRecs] = useState({});         // { performance:[], training:[], qualifications:[], goals:[], canManage }
+  const [recForm, setRecForm] = useState(null);  // add-record modal
 
   const isAdmin = me?.role === "admin";
   const isManager = me?.sales_role === "manager";
@@ -256,6 +256,34 @@ export default function HRProfile() {
   const cancelLeaveReq = async (rid) => {
     if (!window.confirm("Cancel this leave request?")) return;
     try { await api.post(`/api/v1/hr/leave-requests/${rid}/cancel`, {}); toast("Cancelled", "success"); loadLeaveReqs(); load(); }
+    catch (e) { toast(e.message, "error"); }
+  };
+
+  // Performance reviews / training / qualifications / goals
+  const REC_EP = { performance: "reviews", goals: "goals", training: "training?kind=Training", qualifications: "training?kind=Qualification" };
+  const loadRecs = (tabKey) => api.get(`/api/v1/hr/employees/${id}/${REC_EP[tabKey]}`)
+    .then((d) => setRecs((s) => ({ ...s, [tabKey]: d.reviews || d.goals || d.records || [], canManage: d.canManage })))
+    .catch((e) => toast(e.message, "error"));
+  useEffect(() => { if (["performance", "training", "qualifications", "goals"].includes(tab) && recs[tab] === undefined) loadRecs(tab); /* eslint-disable-next-line */ }, [tab]);
+  const saveRec = async () => {
+    setSaving(true);
+    try {
+      const { type, data } = recForm;
+      if (type === "review") await api.post(`/api/v1/hr/employees/${id}/reviews`, data);
+      else if (type === "goal") await api.post(`/api/v1/hr/employees/${id}/goals`, data);
+      else await api.post(`/api/v1/hr/employees/${id}/training`, { ...data, kind: type === "qualification" ? "Qualification" : "Training" });
+      toast("Saved", "success");
+      const tk = type === "review" ? "performance" : type === "goal" ? "goals" : type === "qualification" ? "qualifications" : "training";
+      setRecForm(null); loadRecs(tk);
+    } catch (e) { toast(e.message || "Could not save", "error"); } finally { setSaving(false); }
+  };
+  const delRec = async (kind, recId, tabKey) => {
+    if (!window.confirm("Remove this record?")) return;
+    try { await api.del(`/api/v1/hr/employees/${id}/records/${kind}/${recId}`); loadRecs(tabKey); }
+    catch (e) { toast(e.message, "error"); }
+  };
+  const updGoal = async (gid, patch) => {
+    try { await api.patch(`/api/v1/hr/employees/${id}/goals/${gid}`, patch); loadRecs("goals"); }
     catch (e) { toast(e.message, "error"); }
   };
 
@@ -513,6 +541,88 @@ export default function HRProfile() {
       );
     }
 
+    if (tab === "performance") {
+      const rows = recs.performance; const cm = recs.canManage;
+      return (
+        <div className="hr-cols"><div className="hr-col" style={{ gridColumn: "span 3" }}>
+          <div className="spread" style={{ marginBottom: 12 }}>
+            <h3 className="hr-sec-title" style={{ margin: 0 }}>Reviews &amp; 1-to-1s</h3>
+            {cm && <button className="btn btn-outline btn-sm" onClick={() => setRecForm({ type: "review", title: "Add review / 1-to-1", data: { type: "1-to-1", date: "", rating: "", summary: "", next_date: "" } })}>Add review</button>}
+          </div>
+          {rows === undefined ? <Spinner /> : rows.length === 0 ? <div className="muted small">No reviews or 1-to-1s recorded yet.</div> : rows.map((r) => (
+            <div key={r.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+              <div className="flex" style={{ justifyContent: "space-between" }}>
+                <b>{r.type}{r.rating ? ` · ${r.rating}` : ""}</b>
+                <span className="flex" style={{ gap: 10 }}><span className="muted small">{fmtDate(r.date)}</span>{cm && <a className="hr-action" style={{ padding: 0 }} onClick={() => delRec("review", r.id, "performance")}>Remove</a>}</span>
+              </div>
+              {r.summary && <div className="small" style={{ whiteSpace: "pre-line", marginTop: 4 }}>{r.summary}</div>}
+              <div className="muted small" style={{ marginTop: 2 }}>{r.reviewer ? `By ${r.reviewer}` : ""}{r.nextDate ? ` · next ${fmtDate(r.nextDate)}` : ""}</div>
+            </div>
+          ))}
+        </div></div>
+      );
+    }
+
+    if (tab === "training" || tab === "qualifications") {
+      const isQ = tab === "qualifications";
+      const rows = recs[tab]; const cm = recs.canManage;
+      return (
+        <div className="hr-cols"><div className="hr-col" style={{ gridColumn: "span 3" }}>
+          <div className="spread" style={{ marginBottom: 12 }}>
+            <h3 className="hr-sec-title" style={{ margin: 0 }}>{isQ ? "Qualifications" : "Training"}</h3>
+            {cm && <button className="btn btn-outline btn-sm" onClick={() => setRecForm({ type: isQ ? "qualification" : "training", title: `Add ${isQ ? "qualification" : "training"}`, data: { name: "", provider: "", completed_date: "", expiry_date: "", status: "Completed" } })}>Add {isQ ? "qualification" : "training"}</button>}
+          </div>
+          {rows === undefined ? <Spinner /> : rows.length === 0 ? <div className="muted small">Nothing recorded yet.</div> : (
+            <table className="hr-doc-table"><thead><tr><th>Name</th><th>Provider</th><th>Completed</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+              <tbody>{rows.map((t) => (
+                <tr key={t.id}><td><b>{t.name}</b></td><td className="muted">{t.provider || "—"}</td>
+                  <td>{t.completedDate ? fmtDate(t.completedDate) : "—"}</td><td>{t.expiryDate ? fmtDate(t.expiryDate) : "—"}</td>
+                  <td className="muted">{t.status || "—"}</td>
+                  <td style={{ textAlign: "right" }}>{cm && <a className="hr-action" style={{ padding: 0, color: "var(--red)" }} onClick={() => delRec("training", t.id, tab)}>Remove</a>}</td></tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div></div>
+      );
+    }
+
+    if (tab === "goals") {
+      const rows = recs.goals; const cm = recs.canManage;
+      const ST = ["Not started", "In progress", "Achieved", "Missed"];
+      return (
+        <div className="hr-cols"><div className="hr-col" style={{ gridColumn: "span 3" }}>
+          <div className="spread" style={{ marginBottom: 12 }}>
+            <h3 className="hr-sec-title" style={{ margin: 0 }}>Goals &amp; objectives</h3>
+            {cm && <button className="btn btn-outline btn-sm" onClick={() => setRecForm({ type: "goal", title: "Add goal", data: { title: "", description: "", target_date: "", status: "In progress", progress: 0 } })}>Add goal</button>}
+          </div>
+          {rows === undefined ? <Spinner /> : rows.length === 0 ? <div className="muted small">No goals set yet.</div> : rows.map((g) => (
+            <div key={g.id} style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+              <div className="flex" style={{ justifyContent: "space-between", gap: 8 }}>
+                <b>{g.title}</b>
+                <span className="flex" style={{ gap: 10, alignItems: "center" }}>
+                  {cm ? (
+                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={g.status} onChange={(e) => updGoal(g.id, { status: e.target.value })}>
+                      {ST.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : <span className="small" style={{ fontWeight: 600 }}>{g.status}</span>}
+                  {cm && <a className="hr-action" style={{ padding: 0, color: "var(--red)" }} onClick={() => delRec("goal", g.id, "goals")}>Remove</a>}
+                </span>
+              </div>
+              {g.description && <div className="small" style={{ whiteSpace: "pre-line", marginTop: 3 }}>{g.description}</div>}
+              <div className="flex" style={{ gap: 10, alignItems: "center", marginTop: 6 }}>
+                <div style={{ flex: 1, height: 8, background: "#eef0f3", borderRadius: 99, overflow: "hidden", maxWidth: 320 }}>
+                  <div style={{ width: `${g.progress || 0}%`, height: "100%", background: "var(--green)" }} />
+                </div>
+                <span className="muted small">{g.progress || 0}%</span>
+                {g.targetDate && <span className="muted small">· target {fmtDate(g.targetDate)}</span>}
+              </div>
+              {cm && <input type="range" min="0" max="100" step="5" value={g.progress || 0} onChange={(e) => updGoal(g.id, { progress: Number(e.target.value) })} style={{ width: 320, marginTop: 6 }} />}
+            </div>
+          ))}
+        </div></div>
+      );
+    }
+
     if (tab === "documents") {
       if (!docsData) return <div className="hr-cols"><div className="hr-col"><Spinner /></div></div>;
       const dd = docsData;
@@ -657,6 +767,52 @@ export default function HRProfile() {
           <textarea className="input" rows={4} autoFocus value={noteForm} onChange={(e) => setNoteForm(e.target.value)} placeholder="Add a note to this person's file…" />
         </Modal>
       )}
+
+      {recForm && (() => {
+        const set = (k, v) => setRecForm((f) => ({ ...f, data: { ...f.data, [k]: v } }));
+        const d = recForm.data; const t = recForm.type;
+        return (
+          <Modal title={recForm.title} onClose={() => setRecForm(null)}
+            footer={<>
+              <button className="btn btn-ghost btn-sm" onClick={() => setRecForm(null)} disabled={saving}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={saveRec} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+            </>}>
+            {t === "review" && <>
+              <label className="field"><span>Type</span>
+                <select className="input" value={d.type} onChange={(e) => set("type", e.target.value)}>
+                  {["1-to-1", "Appraisal", "Probation", "Check-in"].map((x) => <option key={x} value={x}>{x}</option>)}
+                </select></label>
+              <label className="field"><span>Date</span><input className="input" type="date" value={d.date} onChange={(e) => set("date", e.target.value)} /></label>
+              <label className="field"><span>Rating (optional)</span><input className="input" value={d.rating} onChange={(e) => set("rating", e.target.value)} placeholder="e.g. Exceeds / Meets / 4 of 5" /></label>
+              <label className="field"><span>Summary</span><textarea className="input" rows={4} value={d.summary} onChange={(e) => set("summary", e.target.value)} /></label>
+              <label className="field"><span>Next review (optional)</span><input className="input" type="date" value={d.next_date} onChange={(e) => set("next_date", e.target.value)} /></label>
+            </>}
+            {(t === "training" || t === "qualification") && <>
+              <label className="field"><span>Name</span><input className="input" value={d.name} onChange={(e) => set("name", e.target.value)} autoFocus /></label>
+              <label className="field"><span>Provider (optional)</span><input className="input" value={d.provider} onChange={(e) => set("provider", e.target.value)} /></label>
+              <div className="flex" style={{ gap: 10 }}>
+                <label className="field" style={{ flex: 1 }}><span>Completed</span><input className="input" type="date" value={d.completed_date} onChange={(e) => set("completed_date", e.target.value)} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Expires (optional)</span><input className="input" type="date" value={d.expiry_date} onChange={(e) => set("expiry_date", e.target.value)} /></label>
+              </div>
+              <label className="field"><span>Status</span>
+                <select className="input" value={d.status} onChange={(e) => set("status", e.target.value)}>
+                  {["Completed", "In progress", "Expired", "Planned"].map((x) => <option key={x} value={x}>{x}</option>)}
+                </select></label>
+            </>}
+            {t === "goal" && <>
+              <label className="field"><span>Title</span><input className="input" value={d.title} onChange={(e) => set("title", e.target.value)} autoFocus /></label>
+              <label className="field"><span>Description</span><textarea className="input" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} /></label>
+              <div className="flex" style={{ gap: 10 }}>
+                <label className="field" style={{ flex: 1 }}><span>Target date</span><input className="input" type="date" value={d.target_date} onChange={(e) => set("target_date", e.target.value)} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Status</span>
+                  <select className="input" value={d.status} onChange={(e) => set("status", e.target.value)}>
+                    {["Not started", "In progress", "Achieved", "Missed"].map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select></label>
+              </div>
+            </>}
+          </Modal>
+        );
+      })()}
 
       {leaveForm && (
         <Modal title="Request leave" onClose={() => setLeaveForm(null)}
