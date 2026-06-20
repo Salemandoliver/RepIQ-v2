@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     # many times, spaced a few minutes apart, before giving up and flagging it Failed.
     max_call_retries: int = 4
 
+    # ---- Secure document storage (HR documents, brief §13) ----
+    # Cloudflare R2 (S3-compatible). When all four are set, HR documents are stored in R2;
+    # otherwise they fall back to durable storage in the database (fine for the current scale,
+    # capped per file). Set these in Railway env to use R2.
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+    max_document_mb: int = 15            # per-file upload cap
+
     # Microsoft Teams (Graph) — meeting recording ingestion from OneDrive Recordings folders
     ms_tenant_id: str = ""
     ms_client_id: str = ""

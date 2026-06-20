@@ -13,7 +13,9 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.mixins import DomainBase
@@ -146,6 +148,43 @@ class LeaveRecord(DomainBase, Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     employee = relationship("Employee", back_populates="leave_records")
+
+
+class EmployeeDocument(DomainBase, Base):
+    """An HR document (contract, right-to-work, policy…) for an employee (brief §12 — Documents).
+    Bytes live in R2 when configured (``backend='r2'``, ``storage_key`` = object key), else in the
+    ``hr_document_blobs`` table (``backend='db'``)."""
+    __tablename__ = "hr_documents"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    backend: Mapped[str] = mapped_column(String(10), default="db")          # r2 | db
+    storage_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    employee = relationship("Employee")
+
+
+class EmployeeDocumentBlob(Base):
+    """Document bytes for the DB storage backend (kept in its own table so the documents list
+    stays light). One row per ``hr_documents`` row whose backend is 'db'."""
+    __tablename__ = "hr_document_blobs"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_documents.id"), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class EmployeeFileNote(DomainBase, Base):
+    """A free-text note on an employee's file (brief §12 — Documents / file notes)."""
+    __tablename__ = "hr_file_notes"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    note: Mapped[str] = mapped_column(Text)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class EmployeeEmergencyContact(DomainBase, Base):

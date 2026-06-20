@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
-import api from "../api";
+import api, { fetchBlobUrl, getToken } from "../api";
 import { Spinner, EmptyState, Modal } from "../components/ui.jsx";
 import { useToast } from "../components/Toast.jsx";
 
@@ -45,7 +45,6 @@ const SOON = {
   benefits: "Benefits & perks (pension, healthcare, etc.) are part of a later HR phase.",
   performance: "Performance reviews and 1-to-1s are part of a later HR phase.",
   assets: "Company assets issued to this person will be listed here.",
-  documents: "Document storage (contracts, right-to-work) lands with secure file storage.",
   goals: "Goals & objectives are part of a later HR phase.",
 };
 
@@ -138,6 +137,9 @@ export default function HRProfile() {
   const [absForm, setAbsForm] = useState(null);   // record-absence modal
   const [histRows, setHistRows] = useState(null);  // history modal
   const [ecEdit, setEcEdit] = useState(null);      // edit-emergency modal
+  const [docsData, setDocsData] = useState(null);  // documents tab payload
+  const [uploadForm, setUploadForm] = useState(null);
+  const [noteForm, setNoteForm] = useState(null);
 
   const isAdmin = me?.role === "admin";
   const isManager = me?.sales_role === "manager";
@@ -231,6 +233,41 @@ export default function HRProfile() {
     if (jt == null) return;
     try { await api.patch(`/api/admin/users/${id}`, { job_title: jt.trim() }); toast("Job title updated", "success"); load(); }
     catch (e) { toast(e.message || "Could not update", "error"); }
+  };
+
+  const loadDocs = () => api.get(`/api/v1/hr/employees/${id}/documents`).then(setDocsData).catch((e) => toast(e.message, "error"));
+  useEffect(() => { if (tab === "documents" && !docsData) loadDocs(); /* eslint-disable-next-line */ }, [tab]);
+
+  const uploadDoc = async () => {
+    if (!uploadForm?.file) { toast("Choose a file", "error"); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", uploadForm.file);
+      if (uploadForm.category) fd.append("category", uploadForm.category);
+      if (uploadForm.notes) fd.append("notes", uploadForm.notes);
+      const res = await fetch(`${api.base}/api/v1/hr/employees/${id}/documents`,
+        { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || `Upload failed (${res.status})`); }
+      toast("Document stored", "success"); setUploadForm(null); loadDocs();
+    } catch (e) { toast(e.message || "Upload failed", "error"); } finally { setSaving(false); }
+  };
+  const downloadDoc = async (doc) => {
+    try {
+      const url = await fetchBlobUrl(`/api/v1/hr/employees/${id}/documents/${doc.id}/download`);
+      window.open(url, "_blank");
+    } catch (e) { toast(e.message || "Could not open", "error"); }
+  };
+  const deleteDoc = async (docId) => {
+    if (!window.confirm("Delete this document? This cannot be undone.")) return;
+    try { await api.del(`/api/v1/hr/employees/${id}/documents/${docId}`); toast("Deleted", "success"); loadDocs(); }
+    catch (e) { toast(e.message || "Could not delete", "error"); }
+  };
+  const addNote = async () => {
+    if (!noteForm?.trim()) return;
+    setSaving(true);
+    try { await api.post(`/api/v1/hr/employees/${id}/file-notes`, { note: noteForm }); toast("Note added", "success"); setNoteForm(null); loadDocs(); }
+    catch (e) { toast(e.message || "Could not add note", "error"); } finally { setSaving(false); }
   };
 
   if (loading) return <div className="hr-profile"><Spinner /></div>;
@@ -438,6 +475,57 @@ export default function HRProfile() {
       );
     }
 
+    if (tab === "documents") {
+      if (!docsData) return <div className="hr-cols"><div className="hr-col"><Spinner /></div></div>;
+      const dd = docsData;
+      return (
+        <div className="hr-cols">
+          <div className="hr-col" style={{ gridColumn: "span 2" }}>
+            <h3 className="hr-sec-title">Latest documents</h3>
+            {dd.documents.length === 0 ? (
+              <div className="muted small">No documents stored yet.</div>
+            ) : (
+              <table className="hr-doc-table">
+                <thead><tr><th>Document</th><th>Added</th><th>Category</th><th></th></tr></thead>
+                <tbody>
+                  {dd.documents.map((d) => (
+                    <tr key={d.id}>
+                      <td><a className="hr-action" style={{ padding: 0, display: "inline" }} onClick={() => downloadDoc(d)}>{d.filename}</a>
+                        {d.size ? <div className="muted" style={{ fontSize: 11 }}>{(d.size / 1024).toFixed(0)} KB</div> : null}</td>
+                      <td>{fmtDate(d.uploadedAt)}{d.uploadedBy ? <div className="muted" style={{ fontSize: 11 }}>by {d.uploadedBy}</div> : null}</td>
+                      <td className="muted">{d.category || "—"}</td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <a className="hr-action" style={{ padding: 0, display: "inline" }} onClick={() => downloadDoc(d)}>View</a>
+                        {dd.canDelete && <> · <a className="hr-action" style={{ padding: 0, display: "inline", color: "var(--red)" }} onClick={() => deleteDoc(d.id)}>Delete</a></>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {(dd.fileNotes?.length > 0 || dd.canManage) && (
+              <>
+                <h3 className="hr-sec-title" style={{ marginTop: 26 }}>Latest file notes</h3>
+                {(!dd.fileNotes || dd.fileNotes.length === 0) ? (
+                  <div className="muted small">No file notes.</div>
+                ) : dd.fileNotes.map((n) => (
+                  <div key={n.id} className="small" style={{ padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div>{n.note}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{new Date(n.at).toLocaleString("en-GB")}{n.by ? ` · ${n.by}` : ""}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+          <Actions items={[
+            dd.canManage && { label: "Store a document", onClick: () => setUploadForm({ category: "", notes: "", file: null }) },
+            dd.canManage && { label: "Add a file note", onClick: () => setNoteForm("") },
+            { label: `Stored in ${dd.storage === "r2" ? "secure cloud storage (R2)" : "the app database"}`, disabled: true },
+          ].filter(Boolean)} />
+        </div>
+      );
+    }
+
     if (tab === "pay") {
       const canSeePay = isAdmin || (me?.scopes || []).includes("financial");
       return <div className="hr-cols"><div className="hr-col">
@@ -500,6 +588,35 @@ export default function HRProfile() {
             <label key={k} className="field"><span>{lbl}</span>
               <input className="input" value={ecEdit[k] || ""} onChange={(e) => setEcEdit((x) => ({ ...x, [k]: e.target.value }))} /></label>
           ))}
+        </Modal>
+      )}
+
+      {uploadForm && (
+        <Modal title="Store a document" onClose={() => setUploadForm(null)}
+          footer={<>
+            <button className="btn btn-ghost btn-sm" onClick={() => setUploadForm(null)} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={uploadDoc} disabled={saving}>{saving ? "Uploading…" : "Store"}</button>
+          </>}>
+          <label className="field"><span>File</span>
+            <input className="input" type="file" onChange={(e) => setUploadForm((f) => ({ ...f, file: e.target.files?.[0] || null }))} /></label>
+          <label className="field"><span>Category</span>
+            <select className="input" value={uploadForm.category} onChange={(e) => setUploadForm((f) => ({ ...f, category: e.target.value }))}>
+              <option value="">— choose —</option>
+              {(docsData?.categories || []).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select></label>
+          <label className="field"><span>Notes (optional)</span>
+            <input className="input" value={uploadForm.notes} onChange={(e) => setUploadForm((f) => ({ ...f, notes: e.target.value }))} /></label>
+          <div className="muted small">Stored in {docsData?.storage === "r2" ? "secure cloud storage." : "the app database (set up R2 for cloud storage)."}</div>
+        </Modal>
+      )}
+
+      {noteForm != null && (
+        <Modal title="Add a file note" onClose={() => setNoteForm(null)}
+          footer={<>
+            <button className="btn btn-ghost btn-sm" onClick={() => setNoteForm(null)} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={addNote} disabled={saving}>{saving ? "Saving…" : "Add note"}</button>
+          </>}>
+          <textarea className="input" rows={4} autoFocus value={noteForm} onChange={(e) => setNoteForm(e.target.value)} placeholder="Add a note to this person's file…" />
         </Modal>
       )}
 

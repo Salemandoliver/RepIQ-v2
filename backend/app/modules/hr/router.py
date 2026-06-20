@@ -3,14 +3,15 @@ and manager/admin read of team/all employees. Every response is projected to the
 scopes; every sensitive write is audited."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from ...auth import get_current_user
-from ...core import rbac
+from ...core import rbac, storage
 from ...core.audit import record_audit
 from ...db import get_db
 from ...models import User
+from . import documents as hr_docs
 from . import imports as hr_imports
 from . import services as svc
 from .models import Employee, EmployeeEmergencyContact
@@ -193,6 +194,73 @@ def put_employee_holiday(user_id: int, body: dict, request: Request,
     svc.update_holiday(db, emp, body or {}, scopes, user, request)
     db.refresh(emp)
     return svc.holiday_view(emp, scopes)
+
+
+# ----------------------------------------------------------------- documents + file notes
+@router.get("/employees/{user_id}/documents")
+def list_documents(user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return {
+        "documents": hr_docs.list_documents(db, emp, scopes),
+        "fileNotes": hr_docs.list_file_notes(db, emp, scopes),
+        "categories": hr_docs.CATEGORIES,
+        "canManage": hr_docs.can_manage(scopes),
+        "canDelete": hr_docs.can_delete(scopes),
+        "storage": storage.active_backend(),
+    }
+
+
+@router.post("/employees/{user_id}/documents")
+async def upload_document(user_id: int, request: Request,
+                          file: UploadFile = File(...), category: str = Form(None),
+                          notes: str = Form(None),
+                          db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    data = await file.read()
+    return hr_docs.upload_document(db, emp, data=data, filename=file.filename,
+                                   content_type=file.content_type, category=category,
+                                   notes=notes, scopes=scopes, actor=user, request=request)
+
+
+@router.get("/employees/{user_id}/documents/{doc_id}/download")
+def download_document(user_id: int, doc_id: str,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    filename, content_type, data = hr_docs.get_document(db, emp, doc_id, scopes)
+    safe = filename.replace('"', "")
+    return Response(content=data, media_type=content_type,
+                    headers={"Content-Disposition": f'inline; filename="{safe}"'})
+
+
+@router.delete("/employees/{user_id}/documents/{doc_id}")
+def remove_document(user_id: int, doc_id: str, request: Request,
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return hr_docs.delete_document(db, emp, doc_id, scopes, user, request)
+
+
+@router.post("/employees/{user_id}/file-notes")
+def add_file_note(user_id: int, body: dict, request: Request,
+                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return hr_docs.add_file_note(db, emp, (body or {}).get("note") or "", scopes, user, request)
+
+
+@router.get("/storage/status")
+def storage_status(user: User = Depends(get_current_user)):
+    _require_admin(user)
+    return storage.status()
+
+
+@router.post("/storage/test")
+def storage_test(user: User = Depends(get_current_user)):
+    _require_admin(user)
+    return storage.test_roundtrip()
 
 
 # ----------------------------------------------------------------- migration tooling (admin)

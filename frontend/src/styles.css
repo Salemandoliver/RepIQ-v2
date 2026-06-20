@@ -812,5 +812,8 @@ table.siq-perf td { padding: 7px 10px; border-bottom: 1px solid #f0f1f3; font-va
 .hr-leave-pill.hol { background: rgba(16,185,129,0.14); color: #0f9d6b; }
 .hr-leave-pill.sick { background: rgba(239,68,68,0.14); color: var(--red); }
 .hr-leave-pill.other { background: rgba(245,158,11,0.16); color: #b8770a; }
+.hr-doc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hr-doc-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); font-weight: 600; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); }
+.hr-doc-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
 @media (max-width: 560px) { .hr-stat-row { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .hr-field-grid { grid-template-columns: 1fr; } }

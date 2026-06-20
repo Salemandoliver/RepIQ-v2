@@ -1404,6 +1404,15 @@ function HRImportSection() {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [holiday, setHoliday] = useState(null);
+  const [storage, setStorage] = useState(null);
+  const [storageTest, setStorageTest] = useState(null);
+
+  useEffect(() => { api.get("/api/v1/hr/storage/status").then(setStorage).catch(() => {}); }, []);
+  const testStorage = async () => {
+    setBusy(true); setStorageTest(null);
+    try { setStorageTest(await api.post("/api/v1/hr/storage/test", {})); }
+    catch (e) { setStorageTest({ ok: false, detail: e.message }); } finally { setBusy(false); }
+  };
 
   const onFile = (e) => {
     const f = e.target.files?.[0];
@@ -1499,6 +1508,22 @@ function HRImportSection() {
           </div>
         )}
         {holiday && !holiday.ok && <div className="small" style={{ marginTop: 10, color: "var(--red)" }}>{holiday.error}</div>}
+      </div>
+
+      <div className="card">
+        <h3 className="card-title" style={{ marginTop: 0 }}>Document storage</h3>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          HR documents are stored in {storage?.backend === "r2"
+            ? <b>Cloudflare R2 (secure cloud storage)</b>
+            : <>the <b>app database</b> (durable; set the R2_* variables in Railway for cloud storage)</>}.
+          {storage?.bucket ? <> Bucket: <code>{storage.bucket}</code>.</> : ""}
+        </p>
+        <button className="btn btn-primary btn-sm" onClick={testStorage} disabled={busy}>{busy ? "Testing…" : "Test storage connection"}</button>
+        {storageTest && (
+          <div className="small" style={{ marginTop: 10, color: storageTest.ok ? "var(--green)" : "var(--red)" }}>
+            {storageTest.ok ? "✓ " : "✗ "}{storageTest.detail}
+          </div>
+        )}
       </div>
     </div>
   );
