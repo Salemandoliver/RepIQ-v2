@@ -245,7 +245,7 @@ function CallStatusPill({ status }) {
   );
 }
 
-function CallCard({ call, onOpen }) {
+function CallCard({ call, onOpen, avatars }) {
   return (
     <div className="card call-card" onClick={onOpen}>
       <div className="spread">
@@ -276,7 +276,7 @@ function CallCard({ call, onOpen }) {
       </div>
       <div className="small" style={{ color: "var(--accent)", fontWeight: 600 }}>{call.activity_type}</div>
       <div className="flex">
-        <Avatar name={call.host?.name} color={call.host?.avatar_color} size={28} />
+        <Avatar name={call.host?.name} color={call.host?.avatar_color} size={28} photo={avatars?.[String(call.host?.id)]} />
         <div className="small" style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {call.host?.name || "Unknown host"}
@@ -325,12 +325,18 @@ export default function Library() {
   const [teams, setTeams] = useState([]);
   const [hosts, setHosts] = useState([]);
   const [topics, setTopics] = useState([]);
+  const [avatars, setAvatars] = useState({});   // userId -> profile photo, for host faces
   const [saved, setSaved] = useState([]);
   const [savedOpen, setSavedOpen] = useState(false);
   const [saveModal, setSaveModal] = useState(false);
   const [saveName, setSaveName] = useState("");
   const debounceRef = useRef(null);
   const savedRef = useRef(null);
+
+  // host profile photos (shown on the call cards instead of initials)
+  useEffect(() => {
+    api.get("/api/v1/hr/team/avatars").then((d) => setAvatars(d?.avatars || {})).catch(() => {});
+  }, []);
 
   // option sources (best-effort: admin endpoints may 403 for non-admins)
   useEffect(() => {
@@ -628,7 +634,7 @@ export default function Library() {
             <>
               <div className="call-grid">
                 {data.items.map((c) => (
-                  <CallCard key={c.id} call={c} onOpen={() => openCall(c)} />
+                  <CallCard key={c.id} call={c} onOpen={() => openCall(c)} avatars={avatars} />
                 ))}
               </div>
               <div className="pagination">

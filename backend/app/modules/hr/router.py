@@ -307,6 +307,18 @@ def add_file_note(user_id: int, body: dict, request: Request,
     return hr_docs.add_file_note(db, emp, (body or {}).get("note") or "", scopes, user, request)
 
 
+@router.get("/team/avatars")
+def team_avatars(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """userId -> profile-photo data URL for active staff who've uploaded one. Lets the app show
+    faces (recordings, dashboards) without putting a photo on every record."""
+    from .models import EmployeePersonal
+    rows = (db.query(User.id, EmployeePersonal.profile_photo)
+            .join(Employee, Employee.user_id == User.id)
+            .join(EmployeePersonal, EmployeePersonal.employee_id == Employee.id)
+            .filter(User.active.is_(True), EmployeePersonal.profile_photo.isnot(None)).all())
+    return {"avatars": {str(uid): photo for uid, photo in rows if photo}}
+
+
 @router.get("/storage/status")
 def storage_status(user: User = Depends(get_current_user)):
     _require_admin(user)

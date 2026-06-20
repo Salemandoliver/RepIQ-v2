@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import api, { fetchBlobUrl, getToken } from "../api";
-import { Spinner, EmptyState, Modal } from "../components/ui.jsx";
+import { Spinner, EmptyState, Modal, GBDate } from "../components/ui.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 /* HR employee profile — SafeHR-style layout: a full tab set, each tab laid out as content
@@ -107,9 +107,11 @@ function EditGrid({ labels, draft, setDraft, userOptions }) {
               <option value="">—</option>
               {SELECT_OPTIONS[k].map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
+          ) : DATE_KEYS.has(k) ? (
+            <GBDate value={draft[k] || ""} onChange={(v) => set(k, v)} />
           ) : (
             <input id={`f-${k}`} className="input"
-              type={DATE_KEYS.has(k) ? "date" : (k === "weekly_hours" || k === "fte" ? "number" : "text")}
+              type={k === "weekly_hours" || k === "fte" ? "number" : "text"}
               step={k === "fte" ? "0.1" : undefined}
               value={(draft[k] ?? "") === null ? "" : (draft[k] || "")} onChange={(e) => set(k, e.target.value)} />
           )}
@@ -713,7 +715,7 @@ export default function HRProfile() {
             <button className="btn btn-primary btn-sm" onClick={saveAbsence} disabled={saving}>{saving ? "Saving…" : "Record"}</button>
           </>}>
           <label className="field"><span>Date</span>
-            <input className="input" type="date" value={absForm.leave_date} onChange={(e) => setAbsForm((f) => ({ ...f, leave_date: e.target.value }))} /></label>
+            <GBDate value={absForm.leave_date} onChange={(v) => setAbsForm((f) => ({ ...f, leave_date: v }))} /></label>
           <label className="field"><span>Type</span>
             <select className="input" value={absForm.leave_type} onChange={(e) => setAbsForm((f) => ({ ...f, leave_type: e.target.value }))}>
               {["Sick", "Holiday", "Compassionate", "Unpaid", "Appointment", "Custom", "Other"].map((t) => <option key={t} value={t}>{t}</option>)}
@@ -782,17 +784,17 @@ export default function HRProfile() {
                 <select className="input" value={d.type} onChange={(e) => set("type", e.target.value)}>
                   {["1-to-1", "Appraisal", "Probation", "Check-in"].map((x) => <option key={x} value={x}>{x}</option>)}
                 </select></label>
-              <label className="field"><span>Date</span><input className="input" type="date" value={d.date} onChange={(e) => set("date", e.target.value)} /></label>
+              <label className="field"><span>Date</span><GBDate value={d.date} onChange={(v) => set("date", v)} /></label>
               <label className="field"><span>Rating (optional)</span><input className="input" value={d.rating} onChange={(e) => set("rating", e.target.value)} placeholder="e.g. Exceeds / Meets / 4 of 5" /></label>
               <label className="field"><span>Summary</span><textarea className="input" rows={4} value={d.summary} onChange={(e) => set("summary", e.target.value)} /></label>
-              <label className="field"><span>Next review (optional)</span><input className="input" type="date" value={d.next_date} onChange={(e) => set("next_date", e.target.value)} /></label>
+              <label className="field"><span>Next review (optional)</span><GBDate value={d.next_date} onChange={(v) => set("next_date", v)} /></label>
             </>}
             {(t === "training" || t === "qualification") && <>
               <label className="field"><span>Name</span><input className="input" value={d.name} onChange={(e) => set("name", e.target.value)} autoFocus /></label>
               <label className="field"><span>Provider (optional)</span><input className="input" value={d.provider} onChange={(e) => set("provider", e.target.value)} /></label>
               <div className="flex" style={{ gap: 10 }}>
-                <label className="field" style={{ flex: 1 }}><span>Completed</span><input className="input" type="date" value={d.completed_date} onChange={(e) => set("completed_date", e.target.value)} /></label>
-                <label className="field" style={{ flex: 1 }}><span>Expires (optional)</span><input className="input" type="date" value={d.expiry_date} onChange={(e) => set("expiry_date", e.target.value)} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Completed</span><GBDate value={d.completed_date} onChange={(v) => set("completed_date", v)} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Expires (optional)</span><GBDate value={d.expiry_date} onChange={(v) => set("expiry_date", v)} /></label>
               </div>
               <label className="field"><span>Status</span>
                 <select className="input" value={d.status} onChange={(e) => set("status", e.target.value)}>
@@ -803,7 +805,7 @@ export default function HRProfile() {
               <label className="field"><span>Title</span><input className="input" value={d.title} onChange={(e) => set("title", e.target.value)} autoFocus /></label>
               <label className="field"><span>Description</span><textarea className="input" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} /></label>
               <div className="flex" style={{ gap: 10 }}>
-                <label className="field" style={{ flex: 1 }}><span>Target date</span><input className="input" type="date" value={d.target_date} onChange={(e) => set("target_date", e.target.value)} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Target date</span><GBDate value={d.target_date} onChange={(v) => set("target_date", v)} /></label>
                 <label className="field" style={{ flex: 1 }}><span>Status</span>
                   <select className="input" value={d.status} onChange={(e) => set("status", e.target.value)}>
                     {["Not started", "In progress", "Achieved", "Missed"].map((x) => <option key={x} value={x}>{x}</option>)}
@@ -826,9 +828,9 @@ export default function HRProfile() {
             </select></label>
           <div className="flex" style={{ gap: 10 }}>
             <label className="field" style={{ flex: 1 }}><span>From</span>
-              <input className="input" type="date" value={leaveForm.start_date} onChange={(e) => setLeaveForm((f) => ({ ...f, start_date: e.target.value }))} /></label>
+              <GBDate value={leaveForm.start_date} onChange={(v) => setLeaveForm((f) => ({ ...f, start_date: v }))} /></label>
             <label className="field" style={{ flex: 1 }}><span>To</span>
-              <input className="input" type="date" value={leaveForm.end_date} onChange={(e) => setLeaveForm((f) => ({ ...f, end_date: e.target.value }))} /></label>
+              <GBDate value={leaveForm.end_date} onChange={(v) => setLeaveForm((f) => ({ ...f, end_date: v }))} /></label>
           </div>
           <div className="flex" style={{ gap: 16, margin: "4px 0 8px" }}>
             <label className="flex small" style={{ gap: 6 }}><input type="checkbox" checked={leaveForm.start_half} onChange={(e) => setLeaveForm((f) => ({ ...f, start_half: e.target.checked }))} /> First day half</label>

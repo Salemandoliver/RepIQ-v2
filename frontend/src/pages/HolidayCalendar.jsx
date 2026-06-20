@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
-import { Skeleton, EmptyState, Modal } from "../components/ui.jsx";
+import { Skeleton, EmptyState, Modal, GBDate } from "../components/ui.jsx";
 
 const STATUS_COLOR = { pending: "var(--amber)", approved: "var(--green)", declined: "var(--red)", cancelled: "var(--text-faint)" };
 
@@ -64,9 +64,9 @@ function MyLeave({ me, toast }) {
             </select></label>
           <div className="flex" style={{ gap: 10 }}>
             <label className="field" style={{ flex: 1 }}><span>From</span>
-              <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} /></label>
+              <GBDate value={form.start_date} onChange={(v) => setForm((f) => ({ ...f, start_date: v }))} /></label>
             <label className="field" style={{ flex: 1 }}><span>To</span>
-              <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} /></label>
+              <GBDate value={form.end_date} onChange={(v) => setForm((f) => ({ ...f, end_date: v }))} /></label>
           </div>
           <div className="flex" style={{ gap: 16, margin: "4px 0 8px" }}>
             <label className="flex small" style={{ gap: 6 }}><input type="checkbox" checked={form.start_half} onChange={(e) => setForm((f) => ({ ...f, start_half: e.target.checked }))} /> First day is a half day</label>

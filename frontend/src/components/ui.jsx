@@ -27,6 +27,24 @@ export function Avatar({ name, color, size = 36, photo }) {
   );
 }
 
+// A UK-format date field (dd/mm/yyyy) that doesn't depend on the browser locale like the native
+// <input type="date"> does. `value`/`onChange` use ISO (yyyy-mm-dd); the user sees dd/mm/yyyy.
+export function GBDate({ value, onChange, style, autoFocus }) {
+  const toDisp = (iso) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
+  const [text, setText] = React.useState(toDisp(value));
+  React.useEffect(() => { setText(toDisp(value)); }, [value]);
+  const handle = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+    let out = digits;
+    if (digits.length >= 5) out = digits.slice(0, 2) + "/" + digits.slice(2, 4) + "/" + digits.slice(4);
+    else if (digits.length >= 3) out = digits.slice(0, 2) + "/" + digits.slice(2);
+    setText(out);
+    onChange(digits.length === 8 ? `${digits.slice(4)}-${digits.slice(2, 4)}-${digits.slice(0, 2)}` : "");
+  };
+  return <input className="input" placeholder="dd/mm/yyyy" inputMode="numeric" maxLength={10}
+    value={text} onChange={handle} style={style} autoFocus={autoFocus} />;
+}
+
 export function ScoreChip({ score, size = 28, decimals }) {
   if (score == null) return null;
   const txt =
