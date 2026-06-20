@@ -99,6 +99,22 @@ def morning(user_id: int | None = None, db: Session = Depends(get_db),
     return morning_dashboard(db, target)
 
 
+@router.get("/benchmarks")
+def benchmarks(user_id: int | None = None, weeks: int = 12,
+               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """A rep's call-quality & orders over time vs the team average, plus their rank. Managers may
+    request a team member's via ?user_id=."""
+    from ..services.intelligence.benchmarks import rep_vs_team
+    target = user
+    if user_id and user_id != user.id:
+        if not _is_manager(db, user):
+            raise HTTPException(403, "Not permitted")
+        target = db.get(User, user_id)
+        if not target:
+            raise HTTPException(404, "User not found")
+    return rep_vs_team(db, target.id, weeks=max(4, min(26, weeks)))
+
+
 @router.get("/team")
 def team(team: str | None = None, db: Session = Depends(get_db),
          user: User = Depends(get_current_user)):
