@@ -5,6 +5,7 @@ import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, Spinner, EmptyState, Modal } from "../components/ui.jsx";
 import { useTeamAvatars, hostName } from "../components/useTeamAvatars.js";
 import CoachingCard from "../components/CoachingCard.jsx";
+import CampaignBadges from "../components/CampaignBadges.jsx";
 import { formatDuration, relativeDate, mmss, callTitle, isTeamsMeeting } from "../utils";
 import {
   PlayIcon,
@@ -622,6 +623,8 @@ export default function CallDetail() {
           <span className="counter"><CommentIcon size={15} /> {comments.length}</span>
         </div>
       </div>
+
+      <CampaignBadges callId={id} />
 
       <div className="call-layout">
         {/* LEFT */}

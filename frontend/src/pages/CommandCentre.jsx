@@ -4,6 +4,8 @@ import { api } from "../api";
 import { Avatar, Spinner, EmptyState, Modal } from "../components/ui.jsx";
 import AskCopilot from "../components/AskCopilot.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
+import TeamLeague from "../components/TeamLeague.jsx";
+import CampaignAlerts from "../components/CampaignAlerts.jsx";
 import { formatDuration } from "../utils";
 
 function WeeklyVideoPicker() {
@@ -174,6 +176,12 @@ export default function CommandCentre() {
         <AskCopilot title="Ask RepIQ" subtitle="the company's performance — team, deals and numbers"
           presets={["Which deals should we focus on?", "Who needs help today?", "How is the team performing this month?"]} />
       </div>
+
+      {/* Campaigns needing a nudge — weak adoption / ending soon */}
+      <CampaignAlerts />
+
+      {/* Team league — ranked by call quality, with most-improved */}
+      <div style={{ marginBottom: 16 }}><TeamLeague /></div>
 
       {/* Weekly performance videos — pick any rep/BC */}
       <WeeklyVideoPicker />

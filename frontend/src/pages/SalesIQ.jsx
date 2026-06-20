@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast.jsx";
 import { Skeleton, EmptyState, Modal } from "../components/ui.jsx";
 import { formatDuration } from "../utils";
 import { TrendingUpIcon } from "../components/Icons.jsx";
+import CampaignsPanel from "../components/CampaignsPanel.jsx";
 
 const RAG_COLOR = { green: "var(--green)", amber: "var(--amber)", red: "var(--red)", none: "var(--text-faint)" };
 const ragOf = (pct) => (pct == null ? "none" : pct >= 80 ? "green" : pct >= 50 ? "amber" : "red");
@@ -776,6 +777,7 @@ function ManagerView({ name }) {
           {meta.leadsConfigured && <BcSection rows={data.bcConversion} />}
           {meta.activityConfigured && <ActivitySection a={data.activity} />}
           {meta.holidayConfigured && <HolidaySection h={data.holiday} />}
+          <CampaignsPanel />
           <IntelligenceSection intel={data.intelligence} names={names} />
           <p className="muted small" style={{ marginTop: 14, textAlign: "center" }}>
             Generated {meta.computedAt ? new Date(meta.computedAt).toLocaleString("en-GB") : ""} · Data: Sales Tracker · Activity Tracker · Lead Tracker · RepIQ

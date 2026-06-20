@@ -16,6 +16,7 @@ const SECTIONS = [
   ["salesiq", "SalesIQ Targets"],
   ["ingestion", "Call Ingestion"],
   ["videos", "Performance Videos"],
+  ["products", "Products"],
   ["hrimport", "HR Import"],
   ["vocabulary", "Vocabulary"],
   ["privacy", "Privacy"],
@@ -1396,6 +1397,64 @@ function IngestionSection() {
   );
 }
 
+function ProductsSection() {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [adding, setAdding] = useState(null);   // { name, pillar, keywords }
+  const load = () => api.get("/api/v1/catalog/products?include_inactive=true").then(setData).catch((e) => toast(e.message, "error"));
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const pillars = data?.pillars || [];
+  const save = async () => {
+    if (!adding.name?.trim()) { toast("Name required", "error"); return; }
+    try { await api.post("/api/v1/catalog/products", adding); toast("Added", "success"); setAdding(null); load(); }
+    catch (e) { toast(e.message, "error"); }
+  };
+  const patch = async (id, body) => { try { await api.patch(`/api/v1/catalog/products/${id}`, body); load(); } catch (e) { toast(e.message, "error"); } };
+  const del = async (id) => { if (!window.confirm("Remove this product?")) return; try { await api.del(`/api/v1/catalog/products/${id}`); load(); } catch (e) { toast(e.message, "error"); } };
+
+  return (
+    <div className="card">
+      <div className="spread" style={{ marginBottom: 8 }}>
+        <h3 className="card-title" style={{ margin: 0 }}>Products</h3>
+        <button className="btn btn-primary btn-sm" onClick={() => setAdding({ name: "", pillar: "", keywords: "" })}>+ Add product</button>
+      </div>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        The products RepIQ knows about. Campaigns link to these, and the keywords help the AI spot them in calls.
+      </p>
+      {data === null ? <div className="muted">Loading…</div> : (
+        <table className="hr-doc-table">
+          <thead><tr><th>Product</th><th>Pillar</th><th>Keywords</th><th>Active</th><th></th></tr></thead>
+          <tbody>
+            {data.products.map((p) => (
+              <tr key={p.id}>
+                <td><b>{p.name}</b></td>
+                <td className="muted">{p.pillar || "—"}</td>
+                <td className="muted small">{p.keywords || "—"}</td>
+                <td><input type="checkbox" checked={p.active} onChange={(e) => patch(p.id, { active: e.target.checked })} /></td>
+                <td style={{ textAlign: "right" }}><a className="hr-action" style={{ padding: 0, color: "var(--red)" }} onClick={() => del(p.id)}>Remove</a></td>
+              </tr>
+            ))}
+            {data.products.length === 0 && <tr><td colSpan={5} className="muted">No products yet.</td></tr>}
+          </tbody>
+        </table>
+      )}
+      {adding && (
+        <Modal title="Add product" onClose={() => setAdding(null)}
+          footer={<><button className="btn btn-ghost btn-sm" onClick={() => setAdding(null)}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={save}>Add</button></>}>
+          <label className="field"><span>Name</span><input className="input" autoFocus value={adding.name} onChange={(e) => setAdding((a) => ({ ...a, name: e.target.value }))} /></label>
+          <label className="field"><span>Pillar</span>
+            <select className="input" value={adding.pillar} onChange={(e) => setAdding((a) => ({ ...a, pillar: e.target.value }))}>
+              <option value="">—</option>{pillars.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select></label>
+          <label className="field"><span>Keywords <span className="muted">(comma separated — detection hints)</span></span>
+            <input className="input" value={adding.keywords} onChange={(e) => setAdding((a) => ({ ...a, keywords: e.target.value }))} placeholder="e.g. btnet, leased line, ethernet" /></label>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function HRImportSection() {
   const toast = useToast();
   const [csv, setCsv] = useState("");
@@ -1625,6 +1684,7 @@ export default function Settings() {
           {section === "salesiq" && <SalesTargetsSection />}
           {section === "ingestion" && <IngestionSection />}
           {section === "videos" && <PerformanceVideosSection />}
+          {section === "products" && <ProductsSection />}
           {section === "hrimport" && <HRImportSection />}
           {section === "vocabulary" && <VocabularySection />}
           {section === "privacy" && <PrivacySection />}

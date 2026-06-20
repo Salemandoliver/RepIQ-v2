@@ -115,6 +115,15 @@ def benchmarks(user_id: int | None = None, weeks: int = 12,
     return rep_vs_team(db, target.id, weeks=max(4, min(26, weeks)))
 
 
+@router.get("/league")
+def league(days: int = 30, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Team league table (managers/admin) — reps ranked by call quality + orders, with most-improved."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Manager view only")
+    from ..services.intelligence.benchmarks import league as _league
+    return _league(db, days=max(7, min(120, days)))
+
+
 @router.get("/team")
 def team(team: str | None = None, db: Session = Depends(get_db),
          user: User = Depends(get_current_user)):

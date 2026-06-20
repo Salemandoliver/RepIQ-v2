@@ -249,6 +249,28 @@ def _manager_ask_context(cc: dict) -> str:
     return "\n".join(lines)
 
 
+def _campaign_context(db, user: User, manager: bool) -> str:
+    """Live promotions + incentives relevant to this user/team (Roadmap Phase 4). Reps never see
+    the incentive bonus £ — only the qualifying product framing."""
+    try:
+        from ...modules.campaigns.services import live_campaigns
+    except Exception:
+        return ""
+    camps = live_campaigns(db, team_id=None if manager else user.team_id)
+    if not camps:
+        return ""
+    lines = ["LIVE CAMPAIGNS (encourage the rep to use these on calls):"]
+    for c in camps:
+        if c.type == "promotion":
+            lines.append(f"- Promotion '{c.name}': {c.offer or c.description or ''} (ends {c.end_date:%d/%m/%Y})")
+        else:
+            extra = ""
+            if manager and c.reward_amount is not None:
+                extra = f" [mgr-only: £{c.reward_amount} {c.reward_basis or ''}, target/rep {c.target_per_rep}]"
+            lines.append(f"- Incentive '{c.name}': pitch {c.qualifying_rule or c.description or 'the qualifying product'} (ends {c.end_date:%d/%m/%Y}){extra}")
+    return "\n".join(lines)
+
+
 def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
     from ...pipeline.analyzer import _claude
     from ...config import settings
@@ -258,7 +280,8 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         from .team import command_centre, _team_reps
         ids = [u.id for u in _team_reps(db, None)] or [user.id]
         calls_ctx = _calls_context(db, ids, start, end, label, limit=70, team=True)
-        parts = [_manager_ask_context(command_centre(db, user)), _team_holiday_context(db), calls_ctx]
+        parts = [_manager_ask_context(command_centre(db, user)), _team_holiday_context(db),
+                 _campaign_context(db, user, manager=True), calls_ctx]
         context = "\n\n".join(p for p in parts if p)
         system = (
             "You are CallIQ, a co-pilot for a sales manager at BT Local Business Oxford & Bucks "
@@ -271,7 +294,8 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         )
         user_msg = f"MANAGER: {user.name} · scope: {label}\n\n{context}\n\nQUESTION: {question}"
     else:
-        parts = [_trackers_context(db, user, role), _calls_context(db, [user.id], start, end, label)]
+        parts = [_trackers_context(db, user, role), _campaign_context(db, user, manager=False),
+                 _calls_context(db, [user.id], start, end, label)]
         context = "\n\n".join(p for p in parts if p)
         system = (
             "You are CallIQ, a personal sales co-pilot for a rep at BT Local Business Oxford & "

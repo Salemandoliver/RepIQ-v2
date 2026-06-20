@@ -255,6 +255,16 @@ def process_call(db, call: Call) -> None:
     call.status = "completed"
     call.error = None
     db.commit()
+
+    # 5. Campaign-aware pass (Roadmap Phase 2) — fully isolated; never breaks completion.
+    try:
+        from ..services.intelligence.campaign_detect import detect_for_call
+        if detect_for_call(db, call, turns, rep_name):
+            db.commit()
+    except Exception:
+        db.rollback()
+        log.warning("campaign detection skipped for call %s", call.id, exc_info=True)
+
     log.info("Call %s completed", call.id)
 
 
@@ -404,6 +414,7 @@ def _ingestion_loop() -> None:
     last_ms_poll = datetime.min
     last_housekeeping = datetime.min
     last_holiday_sync = datetime.min
+    last_embed = datetime.min
     while True:
         try:
             db = SessionLocal()
@@ -436,6 +447,14 @@ def _ingestion_loop() -> None:
                             sync_holiday_from_tracker(db, None, None)
                     except Exception:
                         log.exception("holiday sync failed")
+                # Semantic memory: embed new analysed calls (no-op until embeddings configured).
+                if datetime.utcnow() - last_embed > timedelta(minutes=5):
+                    last_embed = datetime.utcnow()
+                    try:
+                        from ..services.intelligence.memory import embed_pending
+                        embed_pending(db)
+                    except Exception:
+                        log.exception("embedding tick failed")
                 if datetime.utcnow() - last_housekeeping > timedelta(hours=1):
                     last_housekeeping = datetime.utcnow()
                     try:

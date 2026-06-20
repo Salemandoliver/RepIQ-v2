@@ -4,6 +4,7 @@ import { api } from "../api";
 import { EmptyState } from "../components/ui.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
 import TeamCompareCard from "../components/TeamCompareCard.jsx";
+import LiveCampaigns from "../components/LiveCampaigns.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 /* Feature 1 (v2) — the Rep / BC co-pilot "Today".
@@ -245,6 +246,8 @@ export default function MorningDashboard() {
       </div>
 
       <div style={{ marginTop: 16 }}><AskCopilot /></div>
+
+      <LiveCampaigns />
 
       <div style={{ marginTop: 16 }}><TeamCompareCard /></div>
 

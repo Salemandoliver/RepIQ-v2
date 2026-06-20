@@ -16,6 +16,8 @@ from .routers import (auth_router, calls_router, insights_router,
 from .core import audit as _audit_models          # noqa: F401  registers audit_log on Base.metadata
 from .core import registry as module_registry
 from .modules import hr as _hr_module             # noqa: F401  registers HR module + its tables
+from .modules import catalog as _catalog_module   # noqa: F401  registers product catalogue + its tables
+from .modules import campaigns as _campaigns_module  # noqa: F401  registers Campaigns (promotions + incentives)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -154,6 +156,11 @@ def startup():
             _backfill_platform_roles(db)
         except Exception:
             logging.getLogger("calliq").exception("platform role backfill failed")
+        try:
+            from .modules.catalog.models import seed_products
+            seed_products(db)
+        except Exception:
+            logging.getLogger("calliq").exception("product catalogue seed failed")
         # Emergency access recovery: set ADMIN_RESET_PASSWORD in the environment to reset the
         # admin@btlocalbusiness.co.uk password on boot (then remove the variable again).
         _reset_pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()

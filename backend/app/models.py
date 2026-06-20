@@ -303,3 +303,16 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class CallEmbedding(Base):
+    """Semantic memory — one vector per analysed call, for evidence retrieval (Ask RepIQ).
+    Stored as JSON (brute-force cosine in Python); no DB extension needed. Inert until an
+    embeddings provider is configured."""
+    __tablename__ = "call_embeddings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    call_id: Mapped[int] = mapped_column(Integer, index=True, unique=True)
+    model: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vector: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

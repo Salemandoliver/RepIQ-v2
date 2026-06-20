@@ -105,3 +105,50 @@ def rep_vs_team(db, user_id: int, weeks: int = 12, asof: datetime | None = None)
         "qualityRank": _rank(quality_by_rep, higher_better=True),
         "ordersRank": _rank(orders_by_rep, higher_better=True),
     }
+
+
+def league(db, days: int = 30, asof: datetime | None = None) -> dict:
+    """Team league table — every rep ranked by call quality, with orders and 'most improved'
+    (quality change vs the prior equal window). For the Command Centre."""
+    asof = asof or datetime.utcnow()
+    start = asof - timedelta(days=days)
+    prior_start = start - timedelta(days=days)
+    cur = _team_call_rows(db, start, asof)
+    prior = _team_call_rows(db, prior_start, start)
+
+    def _agg(rs):
+        m: dict[int, dict] = {}
+        for r in rs:
+            if not r["host_id"]:
+                continue
+            a = m.setdefault(r["host_id"], {"q": [], "orders": 0, "calls": 0})
+            a["calls"] += 1
+            if r["quality"] is not None:
+                a["q"].append(r["quality"])
+            if r["is_order"]:
+                a["orders"] += 1
+        return m
+
+    cagg, pagg = _agg(cur), _agg(prior)
+    rows = []
+    for hid, a in cagg.items():
+        u = db.get(User, hid)
+        q = _mean(a["q"])
+        pq = _mean(pagg.get(hid, {}).get("q", [])) if hid in pagg else None
+        rows.append({
+            "userId": hid,
+            "name": ((u.short_name or u.name) if u else None),
+            "quality": q, "orders": a["orders"], "calls": a["calls"],
+            "deltaQuality": (round(q - pq, 1) if (q is not None and pq is not None) else None),
+        })
+    rows.sort(key=lambda r: (r["quality"] is None, -(r["quality"] or 0)))
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    improved = [r for r in rows if r["deltaQuality"] and r["deltaQuality"] > 0]
+    most = max(improved, key=lambda r: r["deltaQuality"]) if improved else None
+    return {
+        "days": days,
+        "teamQuality": _mean([r["quality"] for r in rows if r["quality"] is not None]),
+        "reps": rows,
+        "mostImproved": ({"userId": most["userId"], "name": most["name"], "delta": most["deltaQuality"]} if most else None),
+    }

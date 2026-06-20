@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     r2_bucket: str = ""
     max_document_mb: int = 15            # per-file upload cap
 
+    # ---- Semantic memory / embeddings (Roadmap Phase 0 — RepIQ's "brain") ----
+    # When an embeddings provider + key are set, RepIQ embeds call analyses so Ask RepIQ can
+    # retrieve relevant evidence across the whole history (gets smarter the longer it runs).
+    # Provider: "openai" (text-embedding-3-small) or "voyage" (voyage-3). Off until a key is set.
+    embeddings_provider: str = ""        # openai | voyage
+    embeddings_api_key: str = ""
+    embeddings_model: str = ""           # blank = sensible default per provider
+    embeddings_batch: int = 16           # calls embedded per worker tick
+
     # Microsoft Teams (Graph) — meeting recording ingestion from OneDrive Recordings folders
     ms_tenant_id: str = ""
     ms_client_id: str = ""
