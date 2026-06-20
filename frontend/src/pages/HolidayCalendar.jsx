@@ -126,6 +126,7 @@ const HOL_LEGEND = [["🧍", "Working"], ["🌴", "Holiday"], ["🏖️", "Half 
 
 export default function HolidayCalendar() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user: me } = useOutletContext() || {};
   const canApprove = me && (me.role === "admin" || me.sales_role === "manager");
   const now = new Date();
