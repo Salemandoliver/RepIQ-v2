@@ -187,6 +187,28 @@ class EmployeeFileNote(DomainBase, Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class LeaveRequest(DomainBase, Base):
+    """An employee's request for time off (brief §12 — Holiday). On approval it materialises into
+    ``LeaveRecord`` rows (source='request') that feed the balance, calendar and coverage views."""
+    __tablename__ = "hr_leave_requests"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hr_employees.id"), index=True)
+    leave_type: Mapped[str] = mapped_column(String(40), default="Holiday")
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    start_half: Mapped[bool] = mapped_column(Boolean, default=False)      # first day is a half day
+    end_half: Mapped[bool] = mapped_column(Boolean, default=False)        # last day is a half day
+    days: Mapped[float] = mapped_column(Float, default=0.0)               # working days requested
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending|approved|declined|cancelled
+    requested_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    employee = relationship("Employee")
+
+
 class EmployeeEmergencyContact(DomainBase, Base):
     __tablename__ = "hr_employee_emergency_contacts"
 

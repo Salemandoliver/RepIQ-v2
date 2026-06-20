@@ -435,7 +435,10 @@ export default function HRProfile() {
               </div>
             )}
           </div>
-          <Actions items={isAdmin ? [{ label: "Edit allowance", onClick: () => startEdit("holiday", hol) }] : []} />
+          <Actions items={[
+            isSelf && { label: "Request leave", onClick: () => navigate("/holiday") },
+            isAdmin && { label: "Edit allowance", onClick: () => startEdit("holiday", hol) },
+          ].filter(Boolean)} />
         </div>
       );
     }

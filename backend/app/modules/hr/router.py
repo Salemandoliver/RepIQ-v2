@@ -13,6 +13,7 @@ from ...db import get_db
 from ...models import User
 from . import documents as hr_docs
 from . import imports as hr_imports
+from . import leave_requests as hr_lr
 from . import services as svc
 from .models import Employee, EmployeeEmergencyContact
 
@@ -287,6 +288,39 @@ def safehr_apply(body: dict, request: Request,
 def holiday_sync(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_admin(user)
     return hr_imports.sync_holiday_from_tracker(db, user, request)
+
+
+# ----------------------------------------------------------------- leave booking & approvals
+@router.post("/employees/{user_id}/leave-requests")
+def create_leave_request(user_id: int, body: dict, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return hr_lr.create_request(db, emp, body or {}, scopes, user, request)
+
+
+@router.get("/employees/{user_id}/leave-requests")
+def list_leave_requests(user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    emp = svc.employee_by_user(db, user_id)
+    scopes = svc.viewer_scopes(db, user, emp)
+    return {"requests": hr_lr.list_for_employee(db, emp, scopes)}
+
+
+@router.get("/leave-requests/pending")
+def pending_leave_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return {"requests": hr_lr.pending_for_approver(db, user)}
+
+
+@router.post("/leave-requests/{req_id}/decision")
+def decide_leave_request(req_id: str, body: dict, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return hr_lr.decide(db, req_id, bool((body or {}).get("approve")), (body or {}).get("note"), user, request)
+
+
+@router.post("/leave-requests/{req_id}/cancel")
+def cancel_leave_request(req_id: str, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return hr_lr.cancel(db, req_id, user, request)
 
 
 @router.post("/employees/{user_id}/leave")
