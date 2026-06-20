@@ -3,6 +3,7 @@ import { Link, useOutletContext } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, SkeletonRows, EmptyState } from "../components/ui.jsx";
+import { useTeamAvatars, hostName } from "../components/useTeamAvatars.js";
 import { formatDuration, relativeDate, callTitle, isTeamsMeeting } from "../utils";
 import {
   PlayIcon,
@@ -15,9 +16,10 @@ import {
 } from "../components/Icons.jsx";
 
 function RecordingRow({ call }) {
+  const avatars = useTeamAvatars();
   return (
     <div className="rec-row">
-      <Avatar name={call.host?.name || call.customer_name} color={call.host?.avatar_color} size={36} />
+      <Avatar name={hostName(call.host)} color={call.host?.avatar_color} size={36} photo={avatars?.[String(call.host?.id)]} />
       <div className="meta">
         <div className="top">{call.customer_name || "Unknown customer"}</div>
         <div className="sub">
@@ -46,7 +48,7 @@ function PickRow({ call, rank }) {
       <div className="meta">
         <div className="top">{call.customer_name || "Unknown customer"}</div>
         <div className="sub faint">
-          {call.host?.name || "Unknown host"} · {call.activity_type} · {formatDuration(call.duration_sec)}
+          {hostName(call.host)} · {call.activity_type} · {formatDuration(call.duration_sec)}
         </div>
       </div>
       {call.spin_score != null && <ScoreChip score={call.spin_score} size={28} />}
@@ -57,6 +59,7 @@ function PickRow({ call, rank }) {
 export default function Home() {
   const { user } = useOutletContext();
   const toast = useToast();
+  const homeAvatars = useTeamAvatars();
   const [tab, setTab] = useState("mine");
   const [teams, setTeams] = useState([]);
   const [teamId, setTeamId] = useState("");
@@ -233,9 +236,9 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex">
-                  <Avatar name={trend.host?.name} color={trend.host?.avatar_color} size={32} />
+                  <Avatar name={hostName(trend.host)} color={trend.host?.avatar_color} size={32} photo={homeAvatars?.[String(trend.host?.id)]} />
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{trend.host?.name || "Unknown host"}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{hostName(trend.host)}</div>
                     <div className="small muted">{relativeDate(trend.started_at)}</div>
                   </div>
                   <span style={{ marginLeft: "auto" }}>

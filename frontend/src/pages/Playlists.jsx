@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, Modal, Spinner, EmptyState, SkeletonRows } from "../components/ui.jsx";
+import { useTeamAvatars, hostName } from "../components/useTeamAvatars.js";
 import { formatDuration, relativeDate, callTitle, isTeamsMeeting } from "../utils";
 import {
   PlayIcon, PlusIcon, XIcon, EditIcon, TrashIcon,
@@ -54,9 +55,9 @@ function TrendingCard() {
             </div>
           </div>
           <div className="flex">
-            <Avatar name={trend.host?.name} color={trend.host?.avatar_color} size={32} />
+            <Avatar name={hostName(trend.host)} color={trend.host?.avatar_color} size={32} />
             <div>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{trend.host?.name || "Unknown host"}</div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{hostName(trend.host)}</div>
               <div className="small muted">{relativeDate(trend.started_at)}</div>
             </div>
             <span style={{ marginLeft: "auto" }}>{trend.overall_score != null && <ScoreChip score={trend.overall_score} size={28} />}</span>
@@ -121,11 +122,11 @@ function TrackRow({ item, onRemove }) {
       <Link to={`/calls/${call.id}`} className="play-link" title="Open call">
         <PlayIcon size={15} />
       </Link>
-      <Avatar name={call.host?.name} color={call.host?.avatar_color} size={32} />
+      <Avatar name={hostName(call.host)} color={call.host?.avatar_color} size={32} />
       <div className="meta">
         <div className="top">{trackTitle(call)}</div>
         <div className="sub">
-          {call.host?.name || "Unknown host"} · {call.activity_type}
+          {hostName(call.host)} · {call.activity_type}
         </div>
       </div>
       <span className="small muted" style={{ whiteSpace: "nowrap" }}>{formatDuration(call.duration_sec)}</span>

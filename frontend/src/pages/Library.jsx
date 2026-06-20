@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, Skeleton, EmptyState, Modal } from "../components/ui.jsx";
+import { hostName } from "../components/useTeamAvatars.js";
 import { formatDuration, relativeDate, callTitle, isTeamsMeeting, ACTIVITY_TYPES } from "../utils";
 import {
   HeartIcon,
@@ -276,10 +277,10 @@ function CallCard({ call, onOpen, avatars }) {
       </div>
       <div className="small" style={{ color: "var(--accent)", fontWeight: 600 }}>{call.activity_type}</div>
       <div className="flex">
-        <Avatar name={call.host?.name} color={call.host?.avatar_color} size={28} photo={avatars?.[String(call.host?.id)]} />
+        <Avatar name={hostName(call.host)} color={call.host?.avatar_color} size={28} photo={avatars?.[String(call.host?.id)]} />
         <div className="small" style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {call.host?.name || "Unknown host"}
+            {hostName(call.host)}
           </div>
           <div className="faint">
             {relativeDate(call.started_at)} · {formatDuration(call.duration_sec)}

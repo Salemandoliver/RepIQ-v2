@@ -3,6 +3,7 @@ import { useParams, useOutletContext, useSearchParams, Link } from "react-router
 import api, { fetchBlobUrl } from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, Spinner, EmptyState, Modal } from "../components/ui.jsx";
+import { useTeamAvatars, hostName } from "../components/useTeamAvatars.js";
 import CoachingCard from "../components/CoachingCard.jsx";
 import { formatDuration, relativeDate, mmss, callTitle, isTeamsMeeting } from "../utils";
 import {
@@ -414,6 +415,7 @@ export default function CallDetail() {
   const { user } = useOutletContext();
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const avatars = useTeamAvatars();
   const [call, setCall] = useState(null);
   const [error, setError] = useState("");
   const [leftTab, setLeftTab] = useState("flashback");
@@ -577,7 +579,7 @@ export default function CallDetail() {
       {/* header */}
       <div className="card spread" style={{ marginBottom: 20, flexWrap: "wrap", gap: 14 }}>
         <div className="flex" style={{ gap: 14 }}>
-          <Avatar name={call.host?.name} color={call.host?.avatar_color} size={46} />
+          <Avatar name={hostName(call.host)} color={call.host?.avatar_color} size={46} photo={avatars?.[String(call.host?.id)]} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 17 }}>{callTitle(call)}</div>
             <div className="muted small">
@@ -589,7 +591,7 @@ export default function CallDetail() {
                 <>{call.customer_name || "Unknown customer"} · {call.activity_type}</>
               )}{" "}
               · {relativeDate(call.started_at)} · {formatDuration(call.duration_sec)} · hosted by{" "}
-              {call.host?.name || "unknown"}
+              {hostName(call.host)}
             </div>
             {!teamsMeeting && call.contact_calls > 1 && (
               <Link
@@ -847,7 +849,7 @@ export default function CallDetail() {
                 </div>
                 <div className="flex small muted" style={{ marginTop: 8, gap: 16 }}>
                   <span className="flex" style={{ gap: 5 }}>
-                    <span className="dot" style={{ background: "var(--accent)" }} /> {call.host?.name || "Rep"}
+                    <span className="dot" style={{ background: "var(--accent)" }} /> {hostName(call.host)}
                   </span>
                   <span className="flex" style={{ gap: 5 }}>
                     <span className="dot" style={{ background: "#0ea5e9" }} /> {call.customer_name || "Customer"}
