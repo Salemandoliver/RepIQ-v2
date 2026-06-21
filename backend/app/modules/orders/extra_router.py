@@ -16,7 +16,7 @@ from ...db import get_db
 from ...models import User
 from . import imports as erp
 from .models import ORDER_STATUS, Order, OrderLine, OrderProduct
-from .permissions import order_role, require_admin, ADMIN, OPERATIONS
+from .permissions import order_role, require_admin, require_write, ADMIN, OPERATIONS
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders-admin"])
 
@@ -45,8 +45,8 @@ def seed_order_products(db) -> None:
 @router.post("/import/analyze")
 async def import_analyze(file: UploadFile = File(...), db=Depends(get_db),
                          user: User = Depends(get_current_user)):
-    """Dry-run an ERP Dump upload — preview what would be imported, nothing written (admin)."""
-    require_admin(db, user)
+    """Dry-run an ERP Dump upload — preview what would be imported, nothing written (Operations/admin)."""
+    require_write(db, user)
     data = await file.read()
     try:
         return erp.analyze(db, data, file.filename or "upload.csv")
@@ -57,8 +57,8 @@ async def import_analyze(file: UploadFile = File(...), db=Depends(get_db),
 @router.post("/import/commit")
 async def import_commit(file: UploadFile = File(...), db=Depends(get_db),
                         user: User = Depends(get_current_user)):
-    """Commit an ERP Dump import (≥ FY start; idempotent by SO#) — admin only."""
-    require_admin(db, user)
+    """Commit an ERP Dump import (≥ FY start; idempotent by SO#) — Operations/admin."""
+    require_write(db, user)
     data = await file.read()
     try:
         return erp.commit(db, data, file.filename or "upload.csv", user)

@@ -303,7 +303,7 @@ export default function OrderEntry() {
         <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <button className="btn btn-outline btn-sm" onClick={() => download("status-search", "order-status.csv")}>⤓ Status CSV</button>
           <button className="btn btn-outline btn-sm" onClick={() => download("erp-dump", "erp-dump.csv")}>⤓ ERP dump</button>
-          {isAdmin && <button className="btn btn-outline" onClick={() => setImporting(true)}>⇪ Import</button>}
+          {meta?.canWrite && <button className="btn btn-outline" onClick={() => setImporting(true)}>⇪ Import</button>}
           {meta?.canWrite && <button className="btn btn-primary" onClick={() => setOpen("new")}>+ New order</button>}
         </div>
       </div>

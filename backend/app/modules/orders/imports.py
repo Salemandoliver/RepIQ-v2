@@ -54,6 +54,8 @@ HEADER_SYNONYMS = {
     "agent2_split": ["agent 2 split", "agent2 split"],
     "agent3_split": ["agent 3 split", "agent3 split"],
     "dirty": ["sales team issue / dirty order?", "dirty order", "sales team issue"],
+    "bt_commission_paid": ["bt commission paid", "item on finance"],
+    "schedule5_check": ["schedule 5 check"],
 }
 _BOM = "﻿"
 
@@ -130,6 +132,23 @@ def _to_float(v) -> float:
         return 0.0
 
 
+def _yn(v) -> bool:
+    return _norm(str(v or "")) in ("y", "yes", "true", "1", "paid", "✓", "x")
+
+
+def _s5check(v):
+    t = _norm(str(v or ""))
+    if not t:
+        return None
+    if "not on" in t or "not_on" in t:
+        return "not_on"
+    if "incorrect" in t:
+        return "on_incorrect"
+    if "correct" in t:
+        return "on_correct"
+    return None
+
+
 def _status_code(text) -> str:
     t = _norm(str(text or ""))
     t = re.sub(r"^[a-z]\.\s*", "", t)        # strip "I. " prefix
@@ -180,6 +199,8 @@ def _group(data: bytes, filename: str, floor: date):
             "contract_value": _to_float(_cell(row, idx, "contract_value")),
             "quantity": int(_to_float(_cell(row, idx, "quantity")) or 1),
             "gm": _to_float(_cell(row, idx, "gm")),
+            "bt_commission_paid": _yn(_cell(row, idx, "bt_commission_paid")),
+            "schedule5_check": _s5check(_cell(row, idx, "schedule5_check")),
         })
         rep = _cell(row, idx, "sales_rep")
         if rep:
@@ -233,7 +254,9 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
             db.add(OrderLine(order_id=o.id, line_no=i, item_name=ln["item"],
                              product_group1=ln["group1"], product_group2=ln["group2"],
                              schedule5_area=ln["schedule5"], contract_value=ln["contract_value"],
-                             quantity=ln["quantity"], gm=ln["gm"]))
+                             quantity=ln["quantity"], gm=ln["gm"],
+                             bt_commission_paid=ln["bt_commission_paid"],
+                             schedule5_check=ln["schedule5_check"]))
         for a in od["agents"].values():
             match = next((u for u in users if user_agent_match(u, a["name"])), None)
             db.add(OrderAgent(order_id=o.id, user_id=match.id if match else None,
