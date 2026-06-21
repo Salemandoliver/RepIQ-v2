@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session
 
 from ...models import User
 from ...services.salesiq.fincal import financial_year_start
-from ...services.salesiq.roles import user_agent_match
-from .models import ORDER_STATUS, Order, OrderAgent, OrderLine
-from .services import find_or_create_customer, next_order_number, recompute_totals, stamp_financial_month
+from ...services.salesiq.roles import agent_matches
+from .models import ORDER_STATUS, Customer, Order, OrderAgent, OrderLine
+from .services import recompute_totals, stamp_financial_month
 
 # Canonical keys → list of accepted header spellings (lower/stripped). Tolerant to NetSuite variants.
 HEADER_SYNONYMS = {
@@ -39,17 +39,17 @@ HEADER_SYNONYMS = {
     "main_order_number": ["main order number", "job number"],
     "sales_rep": ["sales rep", "primary sales rep", "rep"],
     "primary": ["primary", "primary (y/n)", "primary flag"],
-    "sales_role": ["sales role name", "sales role"],
+    "sales_role": ["sales role name", "sales role", "sales role: name"],
     "admin_agent": ["admin agent"],
-    "item": ["item name (grouped)", "item name", "item"],
+    "item": ["item name (grouped)", "item: name (grouped)", "item name", "item: name", "item"],
     "item_id": ["item id"],
     "group1": ["product group 1", "product group1"],
     "group2": ["product group 2", "product group2"],
-    "klass": ["class (item) name", "class", "class (item)"],
-    "schedule5": ["item schedule 5", "schedule 5", "schedule 5 area"],
+    "klass": ["class (item) name", "class (item): name", "class", "class (item)"],
+    "schedule5": ["item schedule 5", "item: schedule 5", "schedule 5", "schedule 5 area"],
     "contract_value": ["contract value"],
     "quantity": ["quantity", "qty"],
-    "gm": ["total bookings amount", "gm", "gross margin", "contribution amount (net)"],
+    "gm": ["total sov", "sov", "total bookings amount", "gm", "gross margin", "contribution amount (net)"],
     "contribution_amount": ["contribution amount (net)", "contribution amount"],
     "contribution_pct": ["contribution %", "contribution percent"],
     "agent1_split": ["agent 1 split", "agent1 split"],
@@ -321,17 +321,60 @@ def analyze(db: Session, data: bytes, filename: str, floor: date | None = None) 
             "preview": preview[:200]}
 
 
+_BATCH_SIZE = 50          # commit incrementally so a slow/timed-out import still persists + resumes
+
+
 def commit(db: Session, data: bytes, filename: str, user: User, floor: date | None = None) -> dict:
+    """Import orders. Idempotent by SO# (re-running skips orders already in RepIQ), so a retry after
+    a timeout safely resumes. Commits in batches to keep transactions short and avoid HTTP timeouts."""
     floor = floor or financial_year_start()
     orders, _, skipped_old = _group(data, filename, floor)
     existing = {n for (n,) in db.query(Order.order_number).all()}
     batch = f"erp-{datetime.utcnow():%Y%m%d%H%M%S}"
-    users = db.query(User).all()
-    created = 0
+
+    # Precompute lookups ONCE (the per-order queries were the slow part / cause of the hang).
+    user_index = [(u.id, u.name, u.short_name) for u in db.query(User).all()]
+    cust_by_le: dict = {}
+    cust_by_name: dict = {}
+    for c in db.query(Customer).filter(Customer.deleted_at.is_(None)).all():
+        if c.le_code:
+            cust_by_le[c.le_code.strip()] = c
+        cust_by_name[(c.company_name or "").strip().lower()] = c
+
+    def get_customer(le, name):
+        le = (le or "").strip() or None
+        name = (name or "").strip()
+        if not le and not name:
+            return None
+        c = (cust_by_le.get(le) if le else None) or (cust_by_name.get(name.lower()) if name else None)
+        if c:
+            return c
+        c = Customer(le_code=le, company_name=name or le)
+        db.add(c)
+        db.flush()
+        if le:
+            cust_by_le[le] = c
+        cust_by_name[(c.company_name or "").lower()] = c
+        return c
+
+    agent_cache: dict = {}
+
+    def match_user(agent_name):
+        if agent_name in agent_cache:
+            return agent_cache[agent_name]
+        uid = None
+        for u_id, nm, sn in user_index:
+            if agent_matches(nm, agent_name) or (sn and agent_matches(sn, agent_name)):
+                uid = u_id
+                break
+        agent_cache[agent_name] = uid
+        return uid
+
+    created, pending = 0, 0
     for od in orders:
         if od["so"] in existing:
             continue
-        cust = find_or_create_customer(db, od["le"], od["company"] or "")
+        cust = get_customer(od["le"], od["company"] or "")
         o = Order(order_number=od["so"], order_date=od["date"] or date.today(),
                   status=od["status"], company_name=cust.company_name if cust else (od["company"] or ""),
                   le_code=cust.le_code if cust else od["le"], customer_id=cust.id if cust else None,
@@ -350,13 +393,16 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
                              bt_commission_paid=ln["bt_commission_paid"],
                              schedule5_check=ln["schedule5_check"]))
         for a in od["agents"].values():
-            match = next((u for u in users if user_agent_match(u, a["name"])), None)
-            db.add(OrderAgent(order_id=o.id, user_id=match.id if match else None,
+            db.add(OrderAgent(order_id=o.id, user_id=match_user(a["name"]),
                               agent_name=a["name"], sales_role=a["sales_role"],
                               is_primary=a["is_primary"], contribution_pct=a["contribution_pct"]))
         db.flush()
         recompute_totals(o)
         created += 1
+        pending += 1
+        if pending >= _BATCH_SIZE:
+            db.commit()
+            pending = 0
     db.commit()
     return {"created": created, "skippedExisting": len(orders) - created,
             "skippedBeforeFY": skipped_old, "batch": batch}
