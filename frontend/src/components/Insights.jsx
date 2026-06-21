@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
 import { Skeleton } from "./ui.jsx";
+import { useCachedGet } from "../useCachedGet.js";
 
 // Insight feed (Intelligence Phase 3) — the evidence-bound action list the engine generates.
 // InsightsFeed = manager (Command Centre); MyFocus = the rep's own (Today). Feedback teaches the engine.
@@ -73,11 +74,9 @@ function InsightCard({ ins, onFeedback, compact }) {
 }
 
 function useInsights(params) {
-  const [list, setList] = useState(null);
-  const [err, setErr] = useState(false);
-  const load = () => api.get(`/api/intelligence/insights${params}`).then((d) => setList(d.insights || [])).catch(() => setErr(true));
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
-  const remove = (id) => setList((l) => (l || []).filter((x) => x.id !== id));
+  const { data, error: err, setData } = useCachedGet(`/api/intelligence/insights${params}`);
+  const list = data ? (data.insights || []) : null;
+  const remove = (id) => setData((d) => ({ ...(d || {}), insights: (d?.insights || []).filter((x) => x.id !== id) }));
   return { list, err, remove };
 }
 

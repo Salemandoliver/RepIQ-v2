@@ -79,7 +79,13 @@ export default function Sidebar({ user }) {
       <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
     </svg>
   );
+  const BoxIcon = ({ size = 21 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12" />
+    </svg>
+  );
   const isManagerOrAdmin = user?.role === "admin" || user?.sales_role === "manager";
+  const isOps = user?.platform_role === "operations";
 
   return (
     <aside className="sidebar">
@@ -89,16 +95,19 @@ export default function Sidebar({ user }) {
           : "IQ"}
       </NavLink>
       <nav className="sidebar-nav">
-        {user?.sales_role === "manager"
-          ? link("/command-centre", "Command Centre", GridIcon)
-          : link("/today", "Today", SunIcon)}
-        {link("/salesiq", "SalesIQ", TrendingUpIcon)}
+        {isOps
+          ? link("/orders", "Order Entry", BoxIcon)
+          : user?.sales_role === "manager"
+            ? link("/command-centre", "Command Centre", GridIcon)
+            : link("/today", "Today", SunIcon)}
+        {!isOps && link("/salesiq", "SalesIQ", TrendingUpIcon)}
+        {!isOps && (user?.role === "admin" || isManagerOrAdmin) && link("/orders", "Order Entry", BoxIcon)}
         {link("/companyiq", "CompanyIQ", BuildingIcon)}
         {link("/recordings", "Recordings", PlayCircleIcon)}
-        {link("/insights", "Insights", InsightsIcon)}
-        {link("/insights/coaching", "Coaching", CoachingIcon)}
-        {link("/playlists", "Playlists", PlaylistIcon)}
-        {link("/reports", "AI Reports", ReportsIcon)}
+        {!isOps && link("/insights", "Insights", InsightsIcon)}
+        {!isOps && link("/insights/coaching", "Coaching", CoachingIcon)}
+        {!isOps && link("/playlists", "Playlists", PlaylistIcon)}
+        {!isOps && link("/reports", "AI Reports", ReportsIcon)}
       </nav>
       <div className="sidebar-bottom">
         {link("/adminhub", "Admin Hub", CalendarIcon)}

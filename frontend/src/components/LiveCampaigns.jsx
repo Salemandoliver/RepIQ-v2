@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import api from "../api";
+import React, { useState } from "react";
+import { useCachedGet } from "../useCachedGet.js";
 
 // Rep-facing "Live now" campaigns card (Roadmap Phase 4) — what's running today for the rep's team,
 // with the talking points to use on calls. Promotions show the offer; incentives show the qualifying
@@ -10,12 +10,9 @@ function daysLeft(end) {
 }
 
 export default function LiveCampaigns() {
-  const [camps, setCamps] = useState(null);
   const [open, setOpen] = useState(null);
-
-  useEffect(() => {
-    api.get("/api/v1/campaigns/live").then((d) => setCamps(d.campaigns || [])).catch(() => setCamps([]));
-  }, []);
+  const { data } = useCachedGet("/api/v1/campaigns/live");
+  const camps = data == null ? null : (data.campaigns || []);
 
   if (!camps || camps.length === 0) return null;
 

@@ -18,6 +18,7 @@ from .core import registry as module_registry
 from .modules import hr as _hr_module             # noqa: F401  registers HR module + its tables
 from .modules import catalog as _catalog_module   # noqa: F401  registers product catalogue + its tables
 from .modules import campaigns as _campaigns_module  # noqa: F401  registers Campaigns (promotions + incentives)
+from .modules import orders as _orders_module        # noqa: F401  registers Order Entry (orders + commission + Schedule 5)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -161,6 +162,11 @@ def startup():
             seed_products(db)
         except Exception:
             logging.getLogger("calliq").exception("product catalogue seed failed")
+        try:
+            from .modules.orders.extra_router import seed_order_products
+            seed_order_products(db)
+        except Exception:
+            logging.getLogger("calliq").exception("order product seed failed")
         # Emergency access recovery: set ADMIN_RESET_PASSWORD in the environment to reset the
         # admin@btlocalbusiness.co.uk password on boot (then remove the variable again).
         _reset_pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()

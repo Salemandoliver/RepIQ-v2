@@ -2,17 +2,20 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
 import { Skeleton } from "./ui.jsx";
+import { useCachedGet } from "../useCachedGet.js";
 
 // The Org Oracle + knowledge library (Intelligence Phase 5). Managers ask cross-rep, org-wide
 // questions; answers cite real calls. The library holds mined 'what works' + pinned exemplars.
 
-const EXAMPLES = [
-  "Who is strongest at objection handling, and why?",
-  "What's working on our Cloud Voice calls right now?",
-  "Draft a hiring scorecard from our top performers' patterns.",
-  "Who should mentor the team on discovery questions?",
-  "Where are we losing deals most often?",
-];
+// One Ask, three depths. "This week"/"This month" answer operational questions from recent activity
+// (the old Ask RepIQ); "Patterns" reasons across the whole team over a long history (the Oracle).
+const MODES = [["week", "This week"], ["month", "This month"], ["patterns", "Patterns"]];
+const PRESETS = {
+  week: ["Which deals should we focus on?", "Who needs help today?", "How did we do yesterday?"],
+  month: ["How is the team performing this month?", "Who's behind on activity?", "Where are leads converting best?"],
+  patterns: ["Who is strongest at objection handling, and why?", "What's working on our Cloud Voice calls?",
+    "Draft a hiring scorecard from our top performers.", "Who should mentor the team on discovery?"],
+};
 
 function Sources({ items }) {
   if (!items || items.length === 0) return null;
@@ -27,12 +30,12 @@ function Sources({ items }) {
 }
 
 function KnowledgeLibrary() {
-  const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ title: "", body: "" });
-  const load = () => api.get("/api/intelligence/knowledge").then((d) => setData(d.entries || [])).catch(() => setData([]));
-  useEffect(() => { load(); }, []);
+  const { data: raw, refresh } = useCachedGet("/api/intelligence/knowledge");
+  const data = raw ? (raw.entries || []) : null;
+  const load = refresh;
 
   const KIND = { mined: "🔬 What works", exemplar: "🏅 Exemplar", note: "📝 Note" };
 
@@ -86,18 +89,29 @@ function KnowledgeLibrary() {
 
 export default function OracleAsk() {
   const [q, setQ] = useState("");
+  const [mode, setMode] = useState("week");
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(true);
 
-  const ask = async (question) => {
+  const ask = async (question, useMode) => {
     const text = (question ?? q).trim();
     if (!text) return;
+    const m = useMode || mode;
     setBusy(true); setRes(null);
-    try { setRes(await api.post("/api/intelligence/oracle", { question: text })); }
-    catch (e) { setRes({ answer: e.message || "The Oracle hit an error.", sources: [] }); }
-    finally { setBusy(false); }
+    try {
+      const r = m === "patterns"
+        ? await api.post("/api/intelligence/oracle", { question: text })
+        : await api.post("/api/intelligence/ask", { question: text, scope: m });
+      setRes(r);
+    } catch (e) {
+      setRes({ answer: e.message || "The Oracle hit an error.", sources: [] });
+    } finally { setBusy(false); }
   };
+
+  const subtitle = mode === "patterns"
+    ? "Reasons across the whole team over time — strengths, what's working, hiring, mentoring. Cites real calls."
+    : "Operational questions on recent activity — deals to push, who needs help, this period's numbers.";
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -107,16 +121,20 @@ export default function OracleAsk() {
       </div>
       {open && (
         <>
-          <div className="muted small" style={{ margin: "4px 0 8px" }}>
-            Cross-team questions — strengths, what's working, hiring, mentoring. Answers cite real calls.
+          <div className="siq-seg" style={{ margin: "4px 0 8px" }}>
+            {MODES.map(([v, l]) => (
+              <button key={v} className={`siq-seg-btn${mode === v ? " on" : ""}`}
+                onClick={() => { setMode(v); setRes(null); }}>{l}</button>
+            ))}
           </div>
+          <div className="muted small" style={{ marginBottom: 8 }}>{subtitle}</div>
           <div className="flex" style={{ gap: 8, marginBottom: 8 }}>
-            <input className="input" placeholder="Ask anything about the team…" value={q}
-              onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} style={{ flex: 1 }} />
+            <input className="input" placeholder={mode === "patterns" ? "Ask anything about the team…" : "Ask about this period…"}
+              value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} style={{ flex: 1 }} />
             <button className="btn btn-primary" onClick={() => ask()} disabled={busy}>{busy ? "Thinking…" : "Ask"}</button>
           </div>
           <div className="flex" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-            {EXAMPLES.map((ex, i) => (
+            {(PRESETS[mode] || []).map((ex, i) => (
               <button key={i} className="siq-chip" style={{ cursor: "pointer", fontSize: 11.5 }}
                 onClick={() => { setQ(ex); ask(ex); }}>{ex}</button>
             ))}

@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Avatar, Spinner, EmptyState, Modal } from "../components/ui.jsx";
-import AskCopilot from "../components/AskCopilot.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
 import TeamLeague from "../components/TeamLeague.jsx";
 import CampaignAlerts from "../components/CampaignAlerts.jsx";
 import { InsightsFeed } from "../components/Insights.jsx";
 import OracleAsk from "../components/Oracle.jsx";
+import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 
 function WeeklyVideoPicker() {
@@ -123,16 +123,10 @@ function Stat({ label, value, sub }) {
 }
 
 export default function CommandCentre() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refresh } = useCachedGet("/api/intelligence/team");
   const [sort, setSort] = useState("achievementPct");
   const [drill, setDrill] = useState(null);
-
-  const load = () => {
-    setLoading(true);
-    api.get("/api/intelligence/team").then(setData).catch(() => setData(null)).finally(() => setLoading(false));
-  };
-  useEffect(load, []);
+  const load = refresh;
 
   const reps = useMemo(() => {
     if (!data) return [];
@@ -173,17 +167,11 @@ export default function CommandCentre() {
         <Stat label="Reps" value={ag.reps} />
       </div>
 
-      {/* Ask RepIQ */}
-      <div style={{ marginBottom: 16 }}>
-        <AskCopilot title="Ask RepIQ" subtitle="the company's performance — team, deals and numbers"
-          presets={["Which deals should we focus on?", "Who needs help today?", "How is the team performing this month?"]} />
-      </div>
+      {/* Ask the Oracle — one Ask: operational (this week/month) + cross-team patterns + knowledge library */}
+      <OracleAsk />
 
       {/* The insight engine's prioritised, evidence-bound action list */}
       <InsightsFeed />
-
-      {/* The Org Oracle — cross-team Q&A + knowledge library */}
-      <OracleAsk />
 
       {/* Campaigns needing a nudge — weak adoption / ending soon */}
       <CampaignAlerts />

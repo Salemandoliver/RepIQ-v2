@@ -1,13 +1,11 @@
-import React, { useEffect, useState } from "react";
-import api from "../api";
+import React from "react";
+import { useCachedGet } from "../useCachedGet.js";
 
 // Campaigns needing attention (Roadmap Phase 4 alerts) — weak adoption or ending soon.
 // Manager-only; renders nothing when all campaigns are healthy.
 export default function CampaignAlerts() {
-  const [items, setItems] = useState(null);
-  useEffect(() => {
-    api.get("/api/v1/campaigns/attention").then((d) => setItems(d.items || [])).catch(() => setItems([]));
-  }, []);
+  const { data } = useCachedGet("/api/v1/campaigns/attention");
+  const items = data == null ? null : (data.items || []);
 
   if (!items || items.length === 0) return null;
 

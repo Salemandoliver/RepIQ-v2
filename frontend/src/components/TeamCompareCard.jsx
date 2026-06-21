@@ -1,17 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from "recharts";
-import api from "../api";
+import { useCachedGet } from "../useCachedGet.js";
 
 // "You vs the team" — call quality over time against the team average, plus rank.
-// A gentle, evidence-based nudge to improve and compete. (Roadmap Phase 0/1.)
+// A gentle, evidence-based nudge to improve and compete. (Roadmap Phase 0/1.) Cached across nav.
 export default function TeamCompareCard({ userId, title = "You vs the team" }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    const q = userId ? `?user_id=${userId}` : "";
-    api.get(`/api/intelligence/benchmarks${q}`).then(setData).catch(() => setErr(true));
-  }, [userId]);
+  const { data, error: err } = useCachedGet(`/api/intelligence/benchmarks${userId ? `?user_id=${userId}` : ""}`);
 
   if (err) return null;
   if (!data) return <div className="card"><div className="skeleton" style={{ height: 180 }} /></div>;

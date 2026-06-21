@@ -106,6 +106,26 @@ def fy_months(d: date | None = None) -> list[tuple[int, int]]:
     return out
 
 
+def financial_month_key(d: date | None = None) -> date:
+    """Canonical month key = the sales-month start date containing ``d`` (shared across modules,
+    e.g. Order Entry & commissions stamp every order with this so reporting lines up with sales)."""
+    return current_sales_month(d or date.today())["start"]
+
+
+def financial_year_start(d: date | None = None) -> date:
+    """First day of the financial year containing ``d`` — i.e. the April sales-month start. For the
+    FY beginning April 2026 this is Mon 30 March 2026 (1 Apr 2026 is a Wednesday). This is the
+    default import floor for Order Entry: we only bring in data from the current FY onward."""
+    d = d or date.today()
+    cur = current_sales_month(d)
+    fy_april_year = cur["year"] if cur["month"] >= 4 else cur["year"] - 1
+    return sales_month_start(fy_april_year, 4)
+
+
+def financial_year_label(d: date | None = None) -> str:
+    return financial_quarter(d or date.today())["fyLabel"]
+
+
 def period_bounds(d: date | None = None, period: str = "mtd") -> dict:
     """Start/end dates + a human label for a dashboard period."""
     d = d or date.today()

@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Cell, Tooltip, ResponsiveContainer, Refere
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Skeleton, EmptyState, Modal, CollapsibleCard } from "../components/ui.jsx";
+import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 import { TrendingUpIcon } from "../components/Icons.jsx";
 import CampaignsPanel from "../components/CampaignsPanel.jsx";
@@ -712,17 +713,8 @@ function ManagerView({ name }) {
   const toast = useToast();
   const [period, setPeriod] = useState("month");
   const [team, setTeam] = useState("all");
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [drillRep, setDrillRep] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/api/salesiq/manager?period=${period}&team=${encodeURIComponent(team)}`)
-      .then(setData).catch((e) => { toast(e.message, "error"); setData(null); })
-      .finally(() => setLoading(false));
-  }, [period, team, reloadKey]);
+  const { data, loading, refresh } = useCachedGet(`/api/salesiq/manager?period=${period}&team=${encodeURIComponent(team)}`);
 
   if (drillRep) return <RepDrilldown userId={drillRep.userId} name={drillRep.name} onBack={() => setDrillRep(null)} />;
 
@@ -749,7 +741,7 @@ function ManagerView({ name }) {
           <select className="input siq-team-sel" value={team} onChange={(e) => setTeam(e.target.value)}>
             {teamOptions.map((t) => <option key={t} value={t}>{TEAM_LABEL(t)}</option>)}
           </select>
-          <RefreshButton onDone={() => setReloadKey((k) => k + 1)} />
+          <RefreshButton onDone={refresh} />
         </div>
       </div>
 
@@ -816,17 +808,8 @@ function RepBody({ data }) {
 
 // Manager drill-through into one rep's full dashboard (fetches ?user_id=).
 function RepDrilldown({ userId, name, onBack }) {
-  const toast = useToast();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(null);
-  useEffect(() => {
-    setLoading(true);
-    const q = `?user_id=${userId}` + (month ? `&month=${month}` : "");
-    api.get(`/api/salesiq/dashboard${q}`)
-      .then(setData).catch((e) => { toast(e.message, "error"); setData(null); })
-      .finally(() => setLoading(false));
-  }, [userId, month]);
+  const { data, loading } = useCachedGet(`/api/salesiq/dashboard?user_id=${userId}${month ? `&month=${month}` : ""}`);
   const meta = data?.meta;
   return (
     <div className="page">
@@ -858,20 +841,8 @@ function RepDrilldown({ userId, name, onBack }) {
 
 export default function SalesIQ() {
   const { user } = useOutletContext();
-  const toast = useToast();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    setLoading(true);
-    const q = month ? `?period=mtd&month=${month}` : "?period=mtd";
-    api.get(`/api/salesiq/dashboard${q}`)
-      .then((d) => setData(d))
-      .catch((e) => { toast(e.message, "error"); setData(null); })
-      .finally(() => setLoading(false));
-  }, [month, reloadKey]);
+  const { data, loading, refresh } = useCachedGet(`/api/salesiq/dashboard${month ? `?period=mtd&month=${month}` : "?period=mtd"}`);
 
   const meta = data?.meta;
   const isManager = meta?.role === "manager";
@@ -909,7 +880,7 @@ export default function SalesIQ() {
               </select>
             </label>
           )}
-          <RefreshButton onDone={() => setReloadKey((k) => k + 1)} />
+          <RefreshButton onDone={refresh} />
         </div>
       </div>
 

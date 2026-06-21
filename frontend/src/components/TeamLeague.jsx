@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import api from "../api";
 import { Avatar, Skeleton } from "./ui.jsx";
 import { useTeamAvatars } from "./useTeamAvatars.js";
+import { useCachedGet } from "../useCachedGet.js";
 
 // Team league table — reps ranked by call quality, with orders and "most improved".
 // Collapsible (default open) + team filters. Operations are excluded server-side. (Roadmap Phase 1.)
@@ -20,15 +20,10 @@ const mean = (xs) => {
 };
 
 export default function TeamLeague({ days = 30 }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(false);
+  const { data, error: err } = useCachedGet(`/api/intelligence/league?days=${days}`);
   const [open, setOpen] = useState(true);          // default to full display
   const [filter, setFilter] = useState("all");
   const avatars = useTeamAvatars();
-
-  useEffect(() => {
-    api.get(`/api/intelligence/league?days=${days}`).then(setData).catch(() => setErr(true));
-  }, [days]);
 
   const reps = useMemo(() => {
     const all = data?.reps || [];

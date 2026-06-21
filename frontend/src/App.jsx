@@ -42,6 +42,7 @@ import Playlists from "./pages/Playlists.jsx";
 import Insights from "./pages/Insights.jsx";
 import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
+import OrderEntry from "./pages/OrderEntry.jsx";
 
 function ProtectedLayout() {
   const location = useLocation();
@@ -75,6 +76,7 @@ function AdminOnly({ children }) {
 }
 
 const isManager = (u) => u?.sales_role === "manager";
+const isOps = (u) => u?.platform_role === "operations";
 
 // People management is for managers and admins; everyone else is sent home.
 function PeopleArea({ children }) {
@@ -83,15 +85,19 @@ function PeopleArea({ children }) {
   return children;
 }
 
-// "/" lands each role on the right home: managers → Command Centre, everyone else → Today.
+// "/" lands each role on the right home: Operations → Order Entry (they aren't sales reps),
+// managers → Command Centre, everyone else → Today.
 function RoleLanding() {
   const { user } = useOutletContext() || {};
+  if (isOps(user)) return <Navigate to="/orders" replace />;
   return <Navigate to={isManager(user) ? "/command-centre" : "/today"} replace />;
 }
 
 // Managers never see the rep morning dashboard (brief: they get the Command Centre, full stop).
+// Operations aren't treated as sales reps — Today is hidden for them; they land on Order Entry.
 function RepArea({ children }) {
   const { user } = useOutletContext() || {};
+  if (isOps(user)) return <Navigate to="/orders" replace />;
   if (isManager(user)) return <Navigate to="/command-centre" replace />;
   return children;
 }
@@ -120,6 +126,7 @@ export default function App() {
             <Route path="/adminhub" element={<HolidayCalendar />} />
             <Route path="/companyiq" element={<CompanyIQ />} />
             <Route path="/salesiq" element={<SalesIQ />} />
+            <Route path="/orders" element={<OrderEntry />} />
             <Route path="/library" element={<Library />} />
             <Route path="/recordings" element={<Library />} />
             <Route path="/calls/:id" element={<CallDetail />} />
