@@ -26,7 +26,9 @@ from .services import find_or_create_customer, next_order_number, recompute_tota
 
 # Canonical keys → list of accepted header spellings (lower/stripped). Tolerant to NetSuite variants.
 HEADER_SYNONYMS = {
-    "so": ["document number", "document number (so#)", "so#", "so number", "order number"],
+    "so": ["document number", "document number (so#)", "document number (no.)", "so#", "so #",
+           "so number", "so no", "order number", "order #", "order no", "sales order", "sales order #",
+           "doc number", "document no", "transaction number", "tran id"],
     "date": ["date", "order date"],
     "company": ["company name", "company"],
     "le": ["le", "le code", "customer le"],
@@ -78,8 +80,8 @@ def _build_index(headers: list[str]) -> tuple[dict, list[str]]:
     return idx, unmatched
 
 
-def parse_file(data: bytes, filename: str) -> tuple[list[str], list[list]]:
-    """Return (headers, rows). Supports CSV and (if openpyxl is available) XLSX."""
+def all_rows(data: bytes, filename: str) -> list[list]:
+    """Every row of the file (CSV, or XLSX if openpyxl is available)."""
     name = (filename or "").lower()
     if name.endswith((".xlsx", ".xlsm")):
         try:
@@ -88,15 +90,37 @@ def parse_file(data: bytes, filename: str) -> tuple[list[str], list[list]]:
             raise ValueError("XLSX not supported on the server — please export the ERP Dump as CSV.")
         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         ws = wb[wb.sheetnames[0]]
-        rows = [[c if c is not None else "" for c in r] for r in ws.iter_rows(values_only=True)]
-        if not rows:
-            return [], []
-        return [str(h) for h in rows[0]], rows[1:]
+        return [[c if c is not None else "" for c in r] for r in ws.iter_rows(values_only=True)]
     text = data.decode("utf-8-sig", errors="replace")
-    reader = list(csv.reader(io.StringIO(text)))
-    if not reader:
+    return list(csv.reader(io.StringIO(text)))
+
+
+def _all_spellings() -> set:
+    s: set = set()
+    for sp in HEADER_SYNONYMS.values():
+        s.update(sp)
+    return s
+
+
+def _best_header_row(rows: list[list]) -> int:
+    """NetSuite/Excel exports sometimes have a title or blank row above the real headers. Pick the
+    row (within the first 12) that matches the most known column names."""
+    spell = _all_spellings()
+    best_i, best = 0, -1
+    for i in range(min(12, len(rows))):
+        sc = sum(1 for c in rows[i] if _norm(str(c)) in spell)
+        if sc > best:
+            best, best_i = sc, i
+    return best_i
+
+
+def parse_file(data: bytes, filename: str) -> tuple[list[str], list[list]]:
+    """Return (headers, rows) — auto-detecting the header row past any title/blank rows."""
+    rows = all_rows(data, filename)
+    if not rows:
         return [], []
-    return reader[0], reader[1:]
+    hi = _best_header_row(rows)
+    return [str(h) for h in rows[hi]], rows[hi + 1:]
 
 
 def _cell(row, idx, key):
@@ -171,7 +195,10 @@ def _group(data: bytes, filename: str, floor: date):
     headers, rows = parse_file(data, filename)
     idx, unmatched = _build_index(headers)
     if "so" not in idx:
-        raise ValueError("Could not find a Document Number / SO# column in the file.")
+        found = ", ".join(str(h).strip() for h in headers if str(h).strip())[:600]
+        raise ValueError("Could not find a Document Number / SO# column. Columns found in the file: "
+                         + (found or "(none — is the first sheet the data sheet?)")
+                         + ". Tell Claude which column is the SO/order number and it'll be mapped.")
     orders: dict[str, dict] = {}
     skipped_old = 0
     for row in rows:
