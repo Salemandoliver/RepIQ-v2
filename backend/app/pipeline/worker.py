@@ -415,6 +415,7 @@ def _ingestion_loop() -> None:
     last_housekeeping = datetime.min
     last_holiday_sync = datetime.min
     last_embed = datetime.min
+    last_insights = datetime.min
     while True:
         try:
             db = SessionLocal()
@@ -455,6 +456,18 @@ def _ingestion_loop() -> None:
                         embed_pending(db)
                     except Exception:
                         log.exception("embedding tick failed")
+                # Insight engine: regenerate the evidence-bound action feed ~twice a day (and on
+                # boot). Idempotent (dedupe_key upsert); dismissed insights stay dismissed.
+                if datetime.utcnow() - last_insights > timedelta(hours=12):
+                    last_insights = datetime.utcnow()
+                    try:
+                        from ..services.intelligence.insights import generate
+                        generate(db)
+                        from ..services.intelligence.whatworks import auto_exemplars
+                        auto_exemplars(db)        # cheap, no LLM — keep the exemplar library fresh
+                    except Exception:
+                        db.rollback()
+                        log.exception("insight generation tick failed")
                 if datetime.utcnow() - last_housekeeping > timedelta(hours=1):
                     last_housekeeping = datetime.utcnow()
                     try:

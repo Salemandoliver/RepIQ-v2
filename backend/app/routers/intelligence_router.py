@@ -124,6 +124,129 @@ def league(days: int = 30, db: Session = Depends(get_db), user: User = Depends(g
     return _league(db, days=max(7, min(120, days)))
 
 
+@router.get("/insights")
+def insights(scope: str | None = None, subject_id: int | None = None, status: str = "open",
+             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The insight feed. Reps see their own; managers/admin see everything (optionally filtered)."""
+    from ..services.intelligence.insights import list_for, to_dict
+    rows = list_for(db, user, _is_manager(db, user), scope=scope, subject_id=subject_id, status=status)
+    return {"insights": [to_dict(i) for i in rows]}
+
+
+@router.post("/insights/generate")
+def insights_generate(body: dict | None = None, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """Regenerate the insight feed now (managers/admin). Runs automatically each morning too."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..services.intelligence.insights import generate
+    days = int((body or {}).get("days", 30))
+    try:
+        return generate(db, days=max(7, min(120, days)), polish=bool((body or {}).get("polish", True)))
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("calliq").exception("insight generation failed")
+        raise HTTPException(500, f"Generation failed: {e}")
+
+
+@router.get("/one-to-one/{user_id}")
+def one_to_one(user_id: int, days: int = 30, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """Auto-generated 1-to-1 prep brief for a rep (managers/admin, or the rep themselves)."""
+    if user_id != user.id and not _is_manager(db, user):
+        raise HTTPException(403, "Not permitted")
+    from ..services.intelligence.one_to_one import brief
+    try:
+        return brief(db, user_id, days=max(7, min(120, days)))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/insights/{insight_id}/feedback")
+def insight_feedback(insight_id: int, body: dict, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Acknowledge / mark actioned / dismiss / rate an insight. Teaches the engine (dismissals stick)."""
+    from ..models import Insight
+    from ..services.intelligence.insights import apply_feedback, to_dict
+    i = db.get(Insight, insight_id)
+    if not i:
+        raise HTTPException(404, "Insight not found")
+    if not _is_manager(db, user) and not (i.scope == "rep" and i.subject_id == user.id):
+        raise HTTPException(403, "Not permitted")
+    b = body or {}
+    return to_dict(apply_feedback(db, i, user, b.get("status"), b.get("feedback"), b.get("note")))
+
+
+@router.post("/oracle")
+def oracle(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The Org Oracle — cross-rep, org-wide questions (managers/admin). Reasons over the skill table,
+    insights, mined knowledge and the most relevant calls."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "The Oracle is for managers/admin")
+    q = ((body or {}).get("question") or "").strip()
+    if not q:
+        raise HTTPException(400, "Ask the Oracle a question")
+    from ..services.intelligence.oracle import ask_oracle
+    return ask_oracle(db, user, q)
+
+
+@router.get("/knowledge")
+def knowledge_list(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The knowledge + exemplar library (what works, pinned great moments)."""
+    from ..models import KnowledgeEntry
+    rows = (db.query(KnowledgeEntry).filter(KnowledgeEntry.active.is_(True))
+            .order_by(KnowledgeEntry.pinned.desc(), KnowledgeEntry.created_at.desc()).all())
+    return {"entries": [{"id": e.id, "kind": e.kind, "title": e.title, "body": e.body,
+                         "tags": e.tags or [], "evidence": e.evidence or [], "callId": e.call_id,
+                         "pinned": e.pinned} for e in rows]}
+
+
+@router.post("/knowledge")
+def knowledge_add(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Add a manager note to the knowledge library (managers/admin)."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..models import KnowledgeEntry
+    if not (body.get("title") or "").strip():
+        raise HTTPException(400, "Title required")
+    e = KnowledgeEntry(kind=body.get("kind", "note"), title=body["title"].strip(),
+                       body=body.get("body", ""), tags=body.get("tags") or [],
+                       pinned=bool(body.get("pinned")), created_by=user.id, active=True)
+    db.add(e)
+    db.commit()
+    return {"id": e.id}
+
+
+@router.delete("/knowledge/{entry_id}")
+def knowledge_delete(entry_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..models import KnowledgeEntry
+    e = db.get(KnowledgeEntry, entry_id)
+    if e:
+        e.active = False
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/mine")
+def mine_what_works(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Refresh the mined 'what works' patterns + auto-exemplars (managers/admin)."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..services.intelligence.whatworks import auto_exemplars, mine
+    try:
+        res = mine(db)
+        res["exemplars"] = auto_exemplars(db)
+        return res
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("calliq").exception("mining failed")
+        raise HTTPException(500, f"Mining failed: {e}")
+
+
 @router.get("/team")
 def team(team: str | None = None, db: Session = Depends(get_db),
          user: User = Depends(get_current_user)):

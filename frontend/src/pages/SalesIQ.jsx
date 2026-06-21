@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Cell, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
-import { Skeleton, EmptyState, Modal } from "../components/ui.jsx";
+import { Skeleton, EmptyState, Modal, CollapsibleCard } from "../components/ui.jsx";
 import { formatDuration } from "../utils";
 import { TrendingUpIcon } from "../components/Icons.jsx";
 import CampaignsPanel from "../components/CampaignsPanel.jsx";
@@ -287,8 +287,7 @@ function BcContent({ data }) {
         <Tile label="Rejected" value={p.rejected} />
       </div>
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 className="card-title">Leads &amp; Wins — Last 6 Months</h2>
+      <CollapsibleCard title="Leads & Wins — Last 6 Months" style={{ marginTop: 20 }}>
         <div style={{ width: "100%", height: 190 }}>
           <ResponsiveContainer>
             <BarChart data={trend} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
@@ -300,22 +299,20 @@ function BcContent({ data }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </CollapsibleCard>
 
       {a?.connected && (
-        <div className="card" style={{ marginTop: 20 }}>
-          <h2 className="card-title">My Activity</h2>
+        <CollapsibleCard title="My Activity" style={{ marginTop: 20 }}>
           <div className="siq-tiles">
             <Tile label="Dials Today" value={(a.dialsToday || 0).toLocaleString("en-GB")} />
             <Tile label="Talk Time Today" value={formatDuration(a.talkSecToday || 0)} />
             <Tile label="Leads Logged (MTD)" value={a.leadsLogged} />
           </div>
-        </div>
+        </CollapsibleCard>
       )}
 
       <div className="siq-grid2" style={{ marginTop: 20 }}>
-        <div className="card">
-          <h2 className="card-title">Where My Leads Go</h2>
+        <CollapsibleCard className="card" title="Where My Leads Go">
           {data.byReceiver?.length > 0 ? (
             <div style={{ overflowX: "auto" }}>
               <table className="data siq-perf">
@@ -333,9 +330,8 @@ function BcContent({ data }) {
               </table>
             </div>
           ) : <div className="ciq-faint">No leads this month.</div>}
-        </div>
-        <div className="card">
-          <h2 className="card-title">Recent Leads</h2>
+        </CollapsibleCard>
+        <CollapsibleCard className="card" title="Recent Leads">
           {data.leads?.length > 0 ? (
             <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
               <table className="data siq-perf">
@@ -348,7 +344,7 @@ function BcContent({ data }) {
               </table>
             </div>
           ) : <div className="ciq-faint">No leads.</div>}
-        </div>
+        </CollapsibleCard>
       </div>
     </>
   );
@@ -429,8 +425,7 @@ function PerformanceSection({ perf, pace, onOpenRep }) {
   const chart = reps.map((r) => ({ name: r.rep.split(" ")[0], gm: r.gm, tone: r.status.tone })).sort((a, b) => b.gm - a.gm);
   if (reps.length === 0) return null;
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <h2 className="card-title">① Sales Performance vs Target</h2>
+    <CollapsibleCard title="① Sales Performance vs Target" style={{ marginTop: 18 }}>
       {pace && <div className="siq-note">⚡ {pace}</div>}
       {chart.length > 0 && (
         <div style={{ width: "100%", height: Math.max(140, chart.length * 26) }}>
@@ -475,7 +470,7 @@ function PerformanceSection({ perf, pace, onOpenRep }) {
           </div>
         </div>
       ))}
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -487,8 +482,7 @@ function MiniBar({ pct }) {
 function BcSection({ rows }) {
   if (!rows?.length) return null;
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <h2 className="card-title">② BC Lead Conversion</h2>
+    <CollapsibleCard title="② BC Lead Conversion" style={{ marginTop: 18 }}>
       <div style={{ overflowX: "auto" }}>
         <table className="data siq-perf">
           <thead><tr><th>Business Creator</th><th>Leads</th><th>vs Target</th><th>F2F</th><th>F2F %</th><th>Won</th><th>Won %</th><th>GM</th></tr></thead>
@@ -508,15 +502,14 @@ function BcSection({ rows }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </CollapsibleCard>
   );
 }
 
 function ActivitySection({ a }) {
   const daily = (a.daily || []).map((d) => ({ name: d.label.replace(/ \d{4}$/, ""), calls: d.calls, talk: d.talkMins }));
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <h2 className="card-title">③ Activity — Dials &amp; Talk Time</h2>
+    <CollapsibleCard title="③ Activity — Dials & Talk Time" style={{ marginTop: 18 }}>
       {daily.length > 0 && (
         <>
           <div className="muted small" style={{ marginBottom: 4 }}>This week — team calls per day (avg {a.avgCallsPerDay}/day)</div>
@@ -552,7 +545,7 @@ function ActivitySection({ a }) {
           </table>
         </div>
       )}
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -661,11 +654,8 @@ function HolidaySection({ h }) {
   const [calOpen, setCalOpen] = useState(false);
   if (!h?.connected) return null;
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <div className="spread">
-        <h2 className="card-title">④ Holiday Coverage — Next Week ({h.span})</h2>
-        <button className="btn btn-outline" onClick={() => setCalOpen(true)}>🗓️ View full calendar</button>
-      </div>
+    <CollapsibleCard title={`④ Holiday Coverage — Next Week (${h.span})`} style={{ marginTop: 18 }}
+      actions={<button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); setCalOpen(true); }}>🗓️ View full calendar</button>}>
       <div className="siq-note" style={h.count ? {} : { background: "rgba(16,185,129,0.08)", borderColor: "rgba(16,185,129,0.3)", color: "var(--green)" }}>
         {h.count ? "🌴" : "✅"} {h.note}
       </div>
@@ -687,7 +677,7 @@ function HolidaySection({ h }) {
           </table>
         </div>
       )}
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -696,14 +686,12 @@ function IntelligenceSection({ intel, names }) {
   const c = intel.coaching;
   return (
     <div className="siq-grid2" style={{ marginTop: 18 }}>
-      <div className="card">
-        <h2 className="card-title">⑤ Key Insights {intel.source === "ai" ? "✨" : ""}</h2>
+      <CollapsibleCard className="card" title={<>⑤ Key Insights {intel.source === "ai" ? "✨" : ""}</>}>
         <ul className="siq-insights">
           {(intel.insights || []).map((t, i) => <li key={i}>{highlightNames(t, names)}</li>)}
         </ul>
-      </div>
-      <div className="card">
-        <h2 className="card-title">🎯 Coaching Spotlight</h2>
+      </CollapsibleCard>
+      <CollapsibleCard className="card" title="🎯 Coaching Spotlight">
         {c ? (
           <div>
             <div className="siq-coach-name">{c.rep} <span className="muted">· {c.role}</span></div>
@@ -711,7 +699,7 @@ function IntelligenceSection({ intel, names }) {
             <ul className="siq-insights">{(c.interventions || []).map((t, i) => <li key={i}>{highlightNames(t, names)}</li>)}</ul>
           </div>
         ) : <div className="ciq-faint">No coaching pick this period.</div>}
-      </div>
+      </CollapsibleCard>
     </div>
   );
 }
@@ -795,28 +783,22 @@ function RepBody({ data }) {
     <>
       {data.overall ? <ManagerOverall overall={data.overall} /> : <RepPerformance p={data.performance} />}
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <div className="spread" style={{ marginBottom: 8 }}>
-          <h2 className="card-title" style={{ margin: 0 }}>Monthly Orders · {meta.salesMonthLabel}</h2>
-        </div>
+      <CollapsibleCard title={`Monthly Orders · ${meta.salesMonthLabel}`} style={{ marginTop: 20 }}>
         <OrdersTable weeks={data.monthlyOrders} />
-      </div>
+      </CollapsibleCard>
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 className="card-title">Activity{data.opps?.connected ? "" : " (from RepIQ calls)"}</h2>
+      <CollapsibleCard title={`Activity${data.opps?.connected ? "" : " (from RepIQ calls)"}`} style={{ marginTop: 20 }}>
         <Activity a={data.activity} opps={data.opps} />
-      </div>
+      </CollapsibleCard>
 
       <div className="siq-grid2" style={{ marginTop: 20 }}>
-        <div className="card">
-          <h2 className="card-title">Lead Intelligence</h2>
+        <CollapsibleCard className="card" title="Lead Intelligence">
           {data.leads?.connected ? <LeadIntel leads={data.leads} /> : (
             <EmptyState icon="🤝" title="Lead Tracker not connected"
               sub="Share the BTLB Lead Tracker link to surface leads, status and BC attribution." />
           )}
-        </div>
-        <div className="card">
-          <h2 className="card-title">Field Activity</h2>
+        </CollapsibleCard>
+        <CollapsibleCard className="card" title="Field Activity">
           {data.opps?.connected ? (
             <div className="siq-tiles" style={{ gridTemplateColumns: "1fr 1fr" }}>
               <Tile label="Opps Created (MTD)" value={data.opps.oppsMTD} sub={`of ${data.opps.target} target`} />
@@ -826,7 +808,7 @@ function RepBody({ data }) {
             <EmptyState icon="🚗" title="Activity Tracker not connected"
               sub="Share the LB Activity Tracker link to add F2F visits and opps created." />
           )}
-        </div>
+        </CollapsibleCard>
       </div>
     </>
   );

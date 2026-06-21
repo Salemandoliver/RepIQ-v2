@@ -3,6 +3,7 @@ import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import api, { fetchBlobUrl, getToken } from "../api";
 import { Spinner, EmptyState, Modal, GBDate } from "../components/ui.jsx";
 import { useToast } from "../components/Toast.jsx";
+import OneToOneBrief from "../components/OneToOneBrief.jsx";
 
 /* HR employee profile — SafeHR-style layout: a full tab set, each tab laid out as content
    sections with an Actions sidebar. Content is permission-projected by the API; unbuilt
@@ -531,6 +532,7 @@ export default function HRProfile() {
       const rows = recs.performance; const cm = recs.canManage;
       return (
         <div className="hr-cols"><div className="hr-col" style={{ gridColumn: "span 3" }}>
+          {cm && <OneToOneBrief userId={id} />}
           <div className="spread" style={{ marginBottom: 12 }}>
             <h3 className="hr-sec-title" style={{ margin: 0 }}>Reviews &amp; 1-to-1s</h3>
             {cm && <button className="btn btn-outline btn-sm" onClick={() => setRecForm({ type: "review", title: "Add review / 1-to-1", data: { type: "1-to-1", date: "", rating: "", summary: "", next_date: "" } })}>Add review</button>}

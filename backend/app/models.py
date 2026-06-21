@@ -316,3 +316,62 @@ class CallEmbedding(Base):
     dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vector: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Insight(Base):
+    """An evidence-bound, actionable observation produced by the insight engine (Intelligence Phase 3).
+
+    Detectors emit these from the facts RepIQ already has (call quality/skills, outcomes, benchmarks,
+    campaign mentions). Every insight cites real numbers + calls. `dedupe_key` makes regeneration an
+    UPSERT (one living insight per finding, not duplicates) and lets feedback/status persist so a
+    dismissed insight stays dismissed — the learning loop."""
+    __tablename__ = "insights"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(12), index=True)        # rep | team | campaign | org
+    subject_type: Mapped[str | None] = mapped_column(String(12), nullable=True)   # user | team | campaign
+    subject_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)   # user/team id
+    subject_key: Mapped[str | None] = mapped_column(String(64), nullable=True)    # uuid subjects (campaign)
+    subject_name: Mapped[str | None] = mapped_column(String(160), nullable=True)  # cached display name
+    category: Mapped[str] = mapped_column(String(20), index=True)
+    # skill_gap | coaching | momentum | risk | win | campaign | outcome | process
+    severity: Mapped[str] = mapped_column(String(10), default="medium")           # high|medium|low|positive
+    title: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text, default="")               # the "what" (evidence-bound)
+    recommendation: Mapped[str] = mapped_column(Text, default="")     # the "now what"
+    evidence: Mapped[list] = mapped_column(JSON, default=list)        # [{type, label, callId?}]
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)         # raw numbers backing it
+    signal_key: Mapped[str] = mapped_column(String(60), default="")   # which detector fired
+    dedupe_key: Mapped[str] = mapped_column(String(160), index=True, default="")
+    period_days: Mapped[int] = mapped_column(Integer, default=30)
+    status: Mapped[str] = mapped_column(String(14), default="new", index=True)
+    # new | acknowledged | actioned | dismissed | resolved
+    feedback: Mapped[str | None] = mapped_column(String(14), nullable=True)       # helpful | not_helpful
+    feedback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seen_count: Mapped[int] = mapped_column(Integer, default=1)       # times this finding recurred
+    actioned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+Index("ix_insight_scope_status", Insight.scope, Insight.status)
+Index("ix_insight_subject", Insight.subject_type, Insight.subject_id)
+
+
+class KnowledgeEntry(Base):
+    """Curated/mined organisational knowledge (Intelligence Phase 5) — what-works patterns, exemplar
+    call snippets, manager notes. Feeds the org oracle. Source 'mined' entries come from won-vs-lost
+    analysis; 'exemplar' pin a great call moment; 'note' are manager-authored."""
+    __tablename__ = "knowledge_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)         # mined | exemplar | note
+    title: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)            # [str] e.g. ["objection","cloud_voice"]
+    evidence: Mapped[list] = mapped_column(JSON, default=list)        # [{type,label,callId?}]
+    call_id: Mapped[int | None] = mapped_column(Integer, nullable=True)   # exemplar source call
+    start_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

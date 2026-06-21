@@ -148,6 +148,17 @@ def campaign_perf(cid: str, db=Depends(get_db), user: User = Depends(get_current
     return campaign_performance(db, c)
 
 
+@router.get("/{cid}/closeout")
+def campaign_closeout(cid: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+    """AI close-out / ROI report for a campaign (managers/admin)."""
+    _require_manager(db, user)
+    c = db.get(Campaign, cid)
+    if not c or c.deleted_at is not None:
+        raise HTTPException(404, "Campaign not found")
+    from .closeout import closeout_report
+    return closeout_report(db, c)
+
+
 @router.get("/{cid}")
 def get_campaign(cid: str, db=Depends(get_db), user: User = Depends(get_current_user)):
     _require_manager(db, user)

@@ -6,6 +6,8 @@ import AskCopilot from "../components/AskCopilot.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
 import TeamLeague from "../components/TeamLeague.jsx";
 import CampaignAlerts from "../components/CampaignAlerts.jsx";
+import { InsightsFeed } from "../components/Insights.jsx";
+import OracleAsk from "../components/Oracle.jsx";
 import { formatDuration } from "../utils";
 
 function WeeklyVideoPicker() {
@@ -176,6 +178,12 @@ export default function CommandCentre() {
         <AskCopilot title="Ask RepIQ" subtitle="the company's performance — team, deals and numbers"
           presets={["Which deals should we focus on?", "Who needs help today?", "How is the team performing this month?"]} />
       </div>
+
+      {/* The insight engine's prioritised, evidence-bound action list */}
+      <InsightsFeed />
+
+      {/* The Org Oracle — cross-team Q&A + knowledge library */}
+      <OracleAsk />
 
       {/* Campaigns needing a nudge — weak adoption / ending soon */}
       <CampaignAlerts />

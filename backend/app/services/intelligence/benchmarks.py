@@ -11,8 +11,29 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import joinedload
 
-from ...models import Call, User
+from ...models import Call, Team, User
 from .common import _avg_scores, _mean, quality_100
+from ..salesiq.roles import salesiq_role
+
+
+def _rep_group(db, u: User) -> tuple[str | None, str | None, str | None]:
+    """(team_name, group_slug, sales_role). group_slug ∈ business_creators|value|volume|other.
+    sales_role is None for Operations / non-sales (excluded from the league)."""
+    team_name = None
+    if u and u.team_id:
+        t = db.get(Team, u.team_id)
+        team_name = t.name if t else None
+    role = salesiq_role(u.role, u.job_title, team_name) if u else None
+    tm = (team_name or "").lower()
+    if role == "bc" or "creator" in tm:
+        group = "business_creators"
+    elif "value" in tm:
+        group = "value"
+    elif "volume" in tm:
+        group = "volume"
+    else:
+        group = "other"
+    return team_name, group, role
 
 
 def _team_call_rows(db, start: datetime, asof: datetime) -> list[dict]:
@@ -133,11 +154,15 @@ def league(db, days: int = 30, asof: datetime | None = None) -> dict:
     rows = []
     for hid, a in cagg.items():
         u = db.get(User, hid)
+        team_name, group, role = _rep_group(db, u)
+        if role is None:           # Operations / non-sales — they don't make sales calls
+            continue
         q = _mean(a["q"])
         pq = _mean(pagg.get(hid, {}).get("q", [])) if hid in pagg else None
         rows.append({
             "userId": hid,
             "name": ((u.short_name or u.name) if u else None),
+            "team": team_name, "group": group,
             "quality": q, "orders": a["orders"], "calls": a["calls"],
             "deltaQuality": (round(q - pq, 1) if (q is not None and pq is not None) else None),
         })

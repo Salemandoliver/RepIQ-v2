@@ -2,6 +2,26 @@ import React from "react";
 import { initials, scoreColorHard } from "../utils";
 import { XIcon } from "./Icons.jsx";
 
+// Collapsible card shell — click the header (or the up/down arrow) to fold. Defaults to open
+// ("full display"). `actions` renders extra controls on the header right, before the arrow.
+export function CollapsibleCard({ title, actions, defaultOpen = true, style, className = "card", children, titleTag = "h2" }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  const T = titleTag;
+  return (
+    <div className={className} style={style}>
+      <div className="spread" style={{ cursor: "pointer", marginBottom: open ? 12 : 0 }} onClick={() => setOpen((v) => !v)}>
+        <T className="card-title" style={{ margin: 0 }}>{title}</T>
+        <div className="flex" style={{ gap: 10, alignItems: "center" }}>
+          {actions}
+          <button className="btn btn-ghost btn-sm" aria-label={open ? "Collapse" : "Expand"} style={{ lineHeight: 1 }}
+            onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>{open ? "▲" : "▼"}</button>
+        </div>
+      </div>
+      {open && children}
+    </div>
+  );
+}
+
 export function Avatar({ name, color, size = 36, photo }) {
   if (photo) {
     return (

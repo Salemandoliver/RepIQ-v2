@@ -209,12 +209,35 @@ function Bar({ pct, color }) {
 function CampaignPerf({ campaign, onClose }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(false);
+  const [co, setCo] = useState(null);
+  const [coBusy, setCoBusy] = useState(false);
   useEffect(() => {
     api.get(`/api/v1/campaigns/${campaign.id}/performance`).then(setD).catch(() => setErr(true));
   }, [campaign.id]);
 
+  const closeout = async () => {
+    setCoBusy(true);
+    try { setCo(await api.get(`/api/v1/campaigns/${campaign.id}/closeout`)); }
+    catch (e) { setCo({ report: e.message || "Couldn't generate the report." }); }
+    finally { setCoBusy(false); }
+  };
+
   return (
     <Modal wide title={`📊 ${campaign.name}`} onClose={onClose}>
+      <div className="spread" style={{ marginBottom: 10 }}>
+        <span className="muted small">Adoption, reactions and rep breakdown below.</span>
+        <button className="btn btn-outline btn-sm" onClick={closeout} disabled={coBusy}>
+          {coBusy ? "Writing…" : "📝 AI close-out report"}
+        </button>
+      </div>
+      {co && (
+        <div className="siq-note" style={{ marginBottom: 12, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+          {co.report}
+          {co.generatedAt && <div className="muted small" style={{ marginTop: 6 }}>
+            {co.source === "ai" ? "AI-generated" : "From your data"} · {new Date(co.generatedAt).toLocaleString("en-GB")}
+          </div>}
+        </div>
+      )}
       {err ? <EmptyState icon="📊" title="Couldn't load results" /> :
        !d ? <Skeleton h={260} /> : (() => {
         const t = d.totals || {};
