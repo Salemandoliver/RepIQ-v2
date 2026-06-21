@@ -80,10 +80,71 @@ def _build_index(headers: list[str]) -> tuple[dict, list[str]]:
     return idx, unmatched
 
 
+def _parse_spreadsheetml(data: bytes) -> list[list]:
+    """Parse the Microsoft 'XML Spreadsheet 2003' format (NetSuite's .xls export — actually XML)."""
+    import xml.etree.ElementTree as ET
+    NS = "{urn:schemas-microsoft-com:office:spreadsheet}"
+    try:
+        root = ET.fromstring(data.decode("utf-8-sig", errors="replace"))
+    except ET.ParseError as e:
+        raise ValueError(f"Could not parse the NetSuite Excel-XML file: {e}")
+    table = next((t for t in root.iter(NS + "Table")), None)
+    if table is None:
+        return []
+    out = []
+    for row in table.findall(NS + "Row"):
+        cells, col = [], 0
+        for cell in row.findall(NS + "Cell"):
+            idx_attr = cell.get(NS + "Index")          # sparse rows skip empty cells
+            if idx_attr:
+                target = int(idx_attr) - 1
+                while col < target:
+                    cells.append("")
+                    col += 1
+            d = cell.find(NS + "Data")
+            cells.append(d.text if (d is not None and d.text is not None) else "")
+            col += 1
+        out.append(cells)
+    return out
+
+
+def _parse_html_table(data: bytes) -> list[list]:
+    """Parse a simple HTML <table> export (NetSuite sometimes emits .xls as HTML)."""
+    from html.parser import HTMLParser
+
+    class _P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.rows, self.cur, self.cell = [], None, None
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "tr":
+                self.cur = []
+            elif tag in ("td", "th"):
+                self.cell = ""
+
+        def handle_endtag(self, tag):
+            if tag == "tr" and self.cur is not None:
+                self.rows.append(self.cur)
+                self.cur = None
+            elif tag in ("td", "th") and self.cur is not None:
+                self.cur.append((self.cell or "").strip())
+                self.cell = None
+
+        def handle_data(self, d):
+            if self.cell is not None:
+                self.cell += d
+
+    p = _P()
+    p.feed(data.decode("utf-8-sig", errors="replace"))
+    return [r for r in p.rows if any(str(c).strip() for c in r)]
+
+
 def all_rows(data: bytes, filename: str) -> list[list]:
-    """Every row of the file (CSV, or XLSX if openpyxl is available)."""
+    """Every row of the file — handles CSV, real XLSX, NetSuite Excel-XML (.xls) and HTML-table .xls."""
     name = (filename or "").lower()
-    if name.endswith((".xlsx", ".xlsm")):
+    sniff = data[:4096].decode("utf-8", errors="replace").lower()
+    if data[:2] == b"PK" or name.endswith((".xlsx", ".xlsm")):   # real zip-based xlsx
         try:
             import openpyxl
         except ImportError:
@@ -91,7 +152,11 @@ def all_rows(data: bytes, filename: str) -> list[list]:
         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         ws = wb[wb.sheetnames[0]]
         return [[c if c is not None else "" for c in r] for r in ws.iter_rows(values_only=True)]
-    text = data.decode("utf-8-sig", errors="replace")
+    if "urn:schemas-microsoft-com:office:spreadsheet" in sniff:   # NetSuite Excel-XML .xls
+        return _parse_spreadsheetml(data)
+    if "<table" in sniff or "<tr" in sniff:                       # HTML-table .xls
+        return _parse_html_table(data)
+    text = data.decode("utf-8-sig", errors="replace")            # plain CSV
     return list(csv.reader(io.StringIO(text)))
 
 
