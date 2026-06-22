@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
 import { Skeleton } from "./ui.jsx";
+import Markdown from "./Markdown.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 
 // The Org Oracle + knowledge library (Intelligence Phase 5). Managers ask cross-rep, org-wide
@@ -142,7 +143,7 @@ export default function OracleAsk() {
           {busy && <Skeleton h={80} />}
           {res && (
             <div className="siq-note">
-              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{res.answer}</div>
+              <Markdown text={res.answer} />
               <Sources items={res.sources} />
               {res.semantic === false && (
                 <div className="muted small" style={{ marginTop: 8 }}>

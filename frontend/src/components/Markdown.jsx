@@ -31,25 +31,37 @@ export default function Markdown({ text }) {
   const lines = text.split(/\r?\n/);
   const blocks = [];
   let list = null;
+  let listType = null;
   let key = 0;
 
   const flushList = () => {
     if (list && list.length) {
-      blocks.push(<ul key={`ul-${key++}`}>{list}</ul>);
+      const Tag = listType === "ol" ? "ol" : "ul";
+      blocks.push(<Tag key={`l-${key++}`}>{list}</Tag>);
     }
     list = null;
+    listType = null;
   };
 
   for (const raw of lines) {
     const line = raw.trimEnd();
-    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {          // --- horizontal rule
+      flushList();
+      blocks.push(<hr key={`hr-${key++}`} />);
+      continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
     const li = line.match(/^\s*[-*]\s+(.*)$/);
     if (h) {
       flushList();
-      const Tag = `h${h[1].length}`;
+      const Tag = `h${Math.min(h[1].length, 4)}`;
       blocks.push(<Tag key={`h-${key++}`}>{renderInline(h[2], `h${key}`)}</Tag>);
+    } else if (ol) {
+      if (!list || listType !== "ol") { flushList(); list = []; listType = "ol"; }
+      list.push(<li key={`li-${key++}`}>{renderInline(ol[1], `li${key}`)}</li>);
     } else if (li) {
-      if (!list) list = [];
+      if (!list || listType !== "ul") { flushList(); list = []; listType = "ul"; }
       list.push(<li key={`li-${key++}`}>{renderInline(li[1], `li${key}`)}</li>);
     } else if (line.trim() === "") {
       flushList();
