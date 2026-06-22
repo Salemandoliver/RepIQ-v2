@@ -114,6 +114,15 @@ def rep_vs_team(db, user_id: int, weeks: int = 12, asof: datetime | None = None)
         pct = round(100 * (len(vals) - rank) / max(1, len(vals) - 1)) if len(vals) > 1 else 100
         return {"rank": rank, "of": len(vals), "label": f"{_ordinal(rank)} of {len(vals)}", "percentile": pct}
 
+    def _leader(value_map):
+        items = [(h, v) for h, v in value_map.items() if v is not None]
+        if not items:
+            return None
+        h, v = max(items, key=lambda x: x[1])
+        u = db.get(User, h)
+        return {"name": ((u.short_name or u.name) if u else None),
+                "value": round(v, 1), "isMe": h == user_id}
+
     return {
         "weeks": weeks,
         "repName": (db.get(User, user_id).name if db.get(User, user_id) else None),
@@ -125,6 +134,8 @@ def rep_vs_team(db, user_id: int, weeks: int = 12, asof: datetime | None = None)
         "teamOrdersAvg": round(sum(orders_by_rep.values()) / rep_count, 1) if rep_count else 0,
         "qualityRank": _rank(quality_by_rep, higher_better=True),
         "ordersRank": _rank(orders_by_rep, higher_better=True),
+        "qualityLeader": _leader(quality_by_rep),
+        "ordersLeader": _leader(orders_by_rep),
     }
 
 

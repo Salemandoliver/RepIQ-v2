@@ -169,9 +169,9 @@ def _bc_conversion(db, win: dict) -> list[dict]:
     lead_target = round(BC_MONTHLY_LEAD_TARGET * win["bcFactor"])
     f2f_target = max(1, round(lead_target / 5))
 
-    # GM attribution comes straight from the Sales Tracker split (source of truth): a BC is the
-    # split PARTNER on an order (`splitWith`); `splitPct` is the closing rep's share, so the BC
-    # earns `1 - splitPct` of the GM (default 40%, overridden per deal by the tracker).
+    # GM attribution: a BC is just another Sales Tracker agent — their own tab already holds their
+    # split share of each deal's GM at the agreed split. So a BC's GM is simply the sum of placed
+    # orders where the BC is the `agent` (same treatment as a rep), not a re-derived partner share.
     all_orders: list[dict] = []
     for (y, m) in win["months"]:
         all_orders.extend(sales.orders_for(y, m))
@@ -191,10 +191,11 @@ def _bc_conversion(db, win: dict) -> list[dict]:
         co = _norm_co(l.get("company"))
         if co:
             e["_cos"].add(co)
-    from .roles import bc_split_gm
+    from .roles import agent_matches
     rows = []
     for e in agg.values():
-        gm = bc_split_gm(all_orders, name=e["bc"])
+        gm = round(sum(o["gm"] for o in all_orders
+                       if o.get("placed") and agent_matches(e["bc"], o.get("agent"))), 2)
         rows.append({"bc": e["bc"], "leads": e["leads"], "f2f": e["f2f"], "won": e["won"],
                      "gm": gm, "leadTarget": lead_target, "f2fTarget": f2f_target,
                      "leadPct": _pct(e["leads"], lead_target),

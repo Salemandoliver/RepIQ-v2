@@ -304,17 +304,14 @@ def bc_dashboard(db, user: User, period: str = "mtd", month: str | None = None) 
         trend.append({"label": f"{fincal.MONTH_ABBR[mm]}", "leads": len(ls),
                       "won": sum(1 for l in ls if l.get("signed"))})
 
-    # GM generated this month + the BC's own Monthly Orders, straight from the Sales Tracker (the
-    # source of truth for the split). A BC is the split PARTNER on an order (its `splitWith`); the
-    # tracker's `splitPct` is the closing rep's share, so the BC earns `1 - splitPct` of the GM
-    # (default 40%, but a per-deal agreement in the tracker overrides it). Each order is re-cast for
-    # the BC's view: "split with" shows the rep who closed, "split %" shows the BC's own share.
-    from .roles import bc_split_gm, split_partner_share
-    month_all = sales.orders_for(cur["year"], cur["month"])
-    gm_generated = bc_split_gm(month_all, user=user)
+    # GM generated this month + the BC's own Monthly Orders come straight from the BC's OWN tab in
+    # the Sales Tracker — exactly like a rep. The tracker already splits GM per agent, so each row
+    # on the BC's tab carries THEIR share of the GM at THEIR agreed Split % (e.g. 20/40/60%). So
+    # gmGenerated is just the sum of the BC's placed orders, and Split With / Split % are shown as
+    # recorded (the closing rep + the BC's own share) with no re-derivation.
+    bc_orders = [o for o in sales.orders_for(cur["year"], cur["month"]) if _mine(user, o)]
+    gm_generated = round(sum(o["gm"] for o in bc_orders if o.get("placed")), 2)
 
-    bc_orders = [{**o, "splitWith": o.get("agent"), "splitPct": round(split_partner_share(o), 2)}
-                 for o in month_all if user_agent_match(user, o.get("splitWith"))]
     bweeks: dict[str, list] = {}
     for o in bc_orders:
         bweeks.setdefault(o.get("week") or "Week 1", []).append(o)
