@@ -41,6 +41,34 @@ REP_TITLES = {"sales executive", "senior sales executive", "business development
 # Activity targets — all reps (pay-plan KPIs)
 ACTIVITY_TARGET = {"talkMinsPerDay": 90, "dialsPerDay": 80}
 
+# Business Creators don't close their own deals — they source the lead and a sales rep closes it,
+# splitting the GM. The Sales Tracker is the source of truth for that split per deal: each order's
+# `splitPct` is the PRIMARY rep's share, so the BC (the `splitWith` partner) gets `1 - splitPct`.
+# Where no split is recorded the BC default applies. (Once Order Entry is live the split comes from
+# the order's agents instead.)
+BC_GM_SHARE = 0.40        # default BC share when an order has no explicit split
+
+
+def split_partner_share(o: dict) -> float:
+    """The split partner's (e.g. BC's) fraction of an order's GM, from the tracker's split %."""
+    sp = o.get("splitPct")
+    try:
+        primary = float(sp)
+    except (TypeError, ValueError):
+        return BC_GM_SHARE                    # no split recorded → BC default
+    if primary > 1:                           # tolerate "60" meaning 60%
+        primary /= 100.0
+    return max(0.0, min(1.0, 1.0 - primary))
+
+
+def bc_split_gm(orders: list[dict], *, user=None, name: str | None = None) -> float:
+    """A BC's attributed GM straight from the Sales Tracker: for placed orders where the BC is the
+    split partner, credit their actual split share (default 40%)."""
+    def _match(sw):
+        return user_agent_match(user, sw) if user is not None else agent_matches(name or "", sw)
+    return round(sum(split_partner_share(o) * (o.get("gm") or 0.0)
+                     for o in orders if o.get("placed") and _match(o.get("splitWith"))), 2)
+
 
 def _norm_title(t: str | None) -> str:
     t = re.sub(r"\s+", " ", (t or "").strip().lower())

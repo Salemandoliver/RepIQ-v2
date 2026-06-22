@@ -169,15 +169,12 @@ def _bc_conversion(db, win: dict) -> list[dict]:
     lead_target = round(BC_MONTHLY_LEAD_TARGET * win["bcFactor"])
     f2f_target = max(1, round(lead_target / 5))
 
-    # GM attribution: map placed-order company -> GM, then credit a BC for any of their
-    # lead companies that matches an order (the BC sourced that deal).
-    order_gm: dict[str, float] = {}
+    # GM attribution comes straight from the Sales Tracker split (source of truth): a BC is the
+    # split PARTNER on an order (`splitWith`); `splitPct` is the closing rep's share, so the BC
+    # earns `1 - splitPct` of the GM (default 40%, overridden per deal by the tracker).
+    all_orders: list[dict] = []
     for (y, m) in win["months"]:
-        for o in sales.orders_for(y, m):
-            if o.get("placed") and o.get("company"):
-                k = _norm_co(o["company"])
-                if k:
-                    order_gm[k] = order_gm.get(k, 0.0) + o["gm"]
+        all_orders.extend(sales.orders_for(y, m))
 
     agg: dict[str, dict] = {}
     for l in trackers.lead_rows():
@@ -194,9 +191,10 @@ def _bc_conversion(db, win: dict) -> list[dict]:
         co = _norm_co(l.get("company"))
         if co:
             e["_cos"].add(co)
+    from .roles import bc_split_gm
     rows = []
     for e in agg.values():
-        gm = round(sum(order_gm.get(co, 0.0) for co in e["_cos"]), 2)
+        gm = bc_split_gm(all_orders, name=e["bc"])
         rows.append({"bc": e["bc"], "leads": e["leads"], "f2f": e["f2f"], "won": e["won"],
                      "gm": gm, "leadTarget": lead_target, "f2fTarget": f2f_target,
                      "leadPct": _pct(e["leads"], lead_target),

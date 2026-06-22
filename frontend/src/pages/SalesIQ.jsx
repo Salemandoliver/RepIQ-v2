@@ -302,6 +302,13 @@ function BcContent({ data }) {
         </div>
       </CollapsibleCard>
 
+      <CollapsibleCard title={`Monthly Orders · ${data.meta?.salesMonthLabel || ""}`} style={{ marginTop: 20 }}>
+        <p className="siq-note" style={{ marginTop: 0 }}>
+          Deals you sourced that a rep placed. <b>Split With</b> is the closing rep; <b>Split %</b> is your share of the GM.
+        </p>
+        <OrdersTable weeks={data.monthlyOrders} />
+      </CollapsibleCard>
+
       {a?.connected && (
         <CollapsibleCard title="My Activity" style={{ marginTop: 20 }}>
           <div className="siq-tiles">

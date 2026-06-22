@@ -304,22 +304,29 @@ def bc_dashboard(db, user: User, period: str = "mtd", month: str | None = None) 
         trend.append({"label": f"{fincal.MONTH_ABBR[mm]}", "leads": len(ls),
                       "won": sum(1 for l in ls if l.get("signed"))})
 
-    # GM generated this month = GM of orders PLACED in the current sales month whose company
-    # this BC sourced as a lead. Orders are limited to THIS month (so the figure is monthly,
-    # not a lifetime total), but the BC's company set uses ALL their leads (a lead created in an
-    # earlier month can still close now) — fixes both the old £0 and the inflated lifetime sum.
-    from .manager import _norm_co
-    order_gm: dict[str, float] = {}
-    for o in sales.orders_for(cur["year"], cur["month"]):
-        if o.get("placed") and o.get("company"):
-            k = _norm_co(o["company"])
-            if k:
-                order_gm[k] = order_gm.get(k, 0.0) + o["gm"]
-    bc_all_leads = ([l for l in trackers.lead_rows()
-                     if user_agent_match(user, l.get("bc")) and l.get("company")]
-                    if trackers.leads_configured() else leads)
-    bc_cos = {_norm_co(l["company"]) for l in bc_all_leads if l.get("company")}
-    gm_generated = round(sum(order_gm.get(k, 0.0) for k in bc_cos if k), 2)
+    # GM generated this month + the BC's own Monthly Orders, straight from the Sales Tracker (the
+    # source of truth for the split). A BC is the split PARTNER on an order (its `splitWith`); the
+    # tracker's `splitPct` is the closing rep's share, so the BC earns `1 - splitPct` of the GM
+    # (default 40%, but a per-deal agreement in the tracker overrides it). Each order is re-cast for
+    # the BC's view: "split with" shows the rep who closed, "split %" shows the BC's own share.
+    from .roles import bc_split_gm, split_partner_share
+    month_all = sales.orders_for(cur["year"], cur["month"])
+    gm_generated = bc_split_gm(month_all, user=user)
+
+    bc_orders = [{**o, "splitWith": o.get("agent"), "splitPct": round(split_partner_share(o), 2)}
+                 for o in month_all if user_agent_match(user, o.get("splitWith"))]
+    bweeks: dict[str, list] = {}
+    for o in bc_orders:
+        bweeks.setdefault(o.get("week") or "Week 1", []).append(o)
+
+    def _bwk_key(w):
+        d = "".join(c for c in w if c.isdigit())
+        return int(d) if d else 99
+
+    bc_monthly = [{"week": wk, "orders": bweeks[wk],
+                   "weekSubtotal": {f: round(sum(x.get(f, 0) or 0 for x in bweeks[wk]), 2)
+                                    for f in _SUBTOTAL_FIELDS}}
+                  for wk in sorted(bweeks, key=_bwk_key)]
 
     # Dials & talk time are TODAY's, from CallIQ; leads-logged stays MTD from the tracker.
     today_dt = datetime(today.year, today.month, today.day)
@@ -358,5 +365,6 @@ def bc_dashboard(db, user: User, period: str = "mtd", month: str | None = None) 
         "byReceiver": by_receiver,
         "trend": trend,
         "leads": items,
+        "monthlyOrders": bc_monthly,
         "activity": activity,
     }
