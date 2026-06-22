@@ -26,6 +26,10 @@ function renderInline(text, keyBase) {
   return out;
 }
 
+const isRow = (s) => /^\s*\|.*\|\s*$/.test(s || "");
+const isSep = (s) => /\|/.test(s || "") && /^[\s|:-]+$/.test(s || "") && /-/.test(s || "");
+const cells = (s) => s.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
 export default function Markdown({ text }) {
   if (!text) return null;
   const lines = text.split(/\r?\n/);
@@ -43,8 +47,24 @@ export default function Markdown({ text }) {
     listType = null;
   };
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    // GitHub-style table: a header row followed by a |---|---| separator row.
+    if (isRow(line) && isSep(lines[i + 1])) {
+      flushList();
+      const header = cells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && isRow(lines[i])) { rows.push(cells(lines[i])); i++; }
+      i--;
+      blocks.push(
+        <table className="md-table" key={`t-${key++}`}>
+          <thead><tr>{header.map((c, ci) => <th key={ci}>{renderInline(c, `th${key}-${ci}`)}</th>)}</tr></thead>
+          <tbody>{rows.map((r, ri) => <tr key={ri}>{header.map((_, ci) => <td key={ci}>{renderInline(r[ci] || "", `td${key}-${ri}-${ci}`)}</td>)}</tr>)}</tbody>
+        </table>
+      );
+      continue;
+    }
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {          // --- horizontal rule
       flushList();
       blocks.push(<hr key={`hr-${key++}`} />);

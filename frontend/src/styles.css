@@ -392,11 +392,18 @@ table.data tr.clickable:hover td { background: #f8f9fb; cursor: pointer; }
 .md p { margin: 7px 0; }
 .md ul, .md ol { margin: 7px 0; padding-left: 22px; }
 .md li { margin: 4px 0; }
-.md ul li::marker { color: var(--accent); }
-.md strong { font-weight: 700; color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 3px; padding: 0 3px; }
-.md em { color: var(--text-soft); }
+.md ul li::marker { color: color-mix(in srgb, var(--accent) 55%, transparent); }
+/* Subtle emphasis — medium weight, slightly deeper than body, no highlight chip. */
+.md strong { font-weight: 600; color: var(--text); }
+.md em { color: var(--text-soft); font-style: italic; }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .md > :first-child { margin-top: 0; }
+/* Markdown tables */
+.md-table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+.md-table th { background: color-mix(in srgb, var(--accent) 7%, transparent); font-weight: 600; color: var(--text-soft); }
+.md-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--text-soft) 4%, transparent); }
+.md-table td .md strong, .md-table td strong { font-weight: 600; }
 
 /* ---------- settings ---------- */
 .settings-layout { display: flex; gap: 24px; align-items: flex-start; }
