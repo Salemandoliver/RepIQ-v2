@@ -55,13 +55,15 @@ async def import_analyze(file: UploadFile = File(...), db=Depends(get_db),
 
 
 @router.post("/import/commit")
-async def import_commit(file: UploadFile = File(...), db=Depends(get_db),
+async def import_commit(file: UploadFile = File(...), replace: bool = False, db=Depends(get_db),
                         user: User = Depends(get_current_user)):
-    """Commit an ERP Dump import (≥ FY start; idempotent by SO#) — Operations/admin."""
+    """Commit an ERP Dump import (≥ FY start). Default is idempotent by SO# (a retry resumes).
+    With ``replace=true`` it FIRST wipes all previously-imported orders, then loads the file fresh —
+    use this when the new ERP export is the more accurate source of truth. Operations/admin."""
     require_write(db, user)
     data = await file.read()
     try:
-        return erp.commit(db, data, file.filename or "upload.csv", user)
+        return erp.commit(db, data, file.filename or "upload.csv", user, replace=replace)
     except ValueError as e:
         db.rollback()
         raise HTTPException(400, str(e))

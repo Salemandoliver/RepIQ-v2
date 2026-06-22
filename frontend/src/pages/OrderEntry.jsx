@@ -283,6 +283,7 @@ function ImportModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [replace, setReplace] = useState(false);
   const send = async (path, then) => {
     if (!file) return toast("Choose an ERP Dump file first", "error");
     setBusy(true);
@@ -290,17 +291,32 @@ function ImportModal({ onClose, onDone }) {
     try { const r = await api.upload(`/api/v1/orders/import/${path}`, fd); then(r); }
     catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
   };
+  const commit = () => send(`commit?replace=${replace}`, (r) => {
+    toast(replace ? `Replaced — deleted ${r.deleted}, imported ${r.created}` : `Imported ${r.created} orders`, "success");
+    onDone();
+  });
   return (
     <Modal wide title="Import orders — NetSuite ERP Dump" onClose={onClose}>
       <div className="muted small" style={{ marginBottom: 8 }}>
-        Upload the ERP Dump export (CSV or XLSX). Only the current financial year is imported (from 30 Mar);
-        existing SO numbers are skipped. Runs alongside the live trackers.
+        Upload the ERP Dump export (CSV or XLSX). Only the current financial year is imported (from 30 Mar).
+        Imported orders are marked <b>Placed</b> and stamped with their BT week number; you can change Order
+        Placed manually afterwards.
       </div>
       <input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => { setFile(e.target.files[0]); setPreview(null); }} />
+      <label className="flex" style={{ gap: 8, alignItems: "center", marginTop: 10, padding: "8px 12px",
+        border: "1px solid var(--border)", borderRadius: 8, background: replace ? "color-mix(in srgb, var(--red) 7%, transparent)" : "transparent" }}>
+        <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+        <span><b>Fully replace existing data</b> — delete all previously-imported orders first, then load this file as the source of truth. <span className="muted">(Manually-created orders are kept.)</span></span>
+      </label>
       <div className="flex" style={{ gap: 8, marginTop: 10 }}>
         <button className="btn btn-outline" disabled={busy} onClick={() => send("analyze", setPreview)}>{busy ? "Reading…" : "Dry run"}</button>
-        {preview && <button className="btn btn-primary" disabled={busy} onClick={() => send("commit", (r) => { toast(`Imported ${r.created} orders`, "success"); onDone(); })}>Commit import ({preview.new} new)</button>}
+        {preview && <button className={`btn ${replace ? "btn-danger" : "btn-primary"}`} disabled={busy} onClick={commit}>
+          {busy ? "Working…" : replace ? `Replace all — import ${preview.totalOrders} orders` : `Commit import (${preview.new} new)`}
+        </button>}
       </div>
+      {preview && replace && <div className="small" style={{ marginTop: 8, color: "var(--red)" }}>
+        Replace mode: every previously-imported order will be deleted, then all {preview.totalOrders} orders in this file imported fresh.
+      </div>}
       {preview && (
         <div className="siq-note" style={{ marginTop: 12 }}>
           <div><b>{preview.totalOrders}</b> orders in file · <b>{preview.new}</b> new · {preview.duplicates} already in RepIQ · {preview.skippedBeforeFY} skipped (before {dmy(preview.floor)})</div>
@@ -467,7 +483,7 @@ export default function OrderEntry() {
             <thead>
               <tr>
                 {[["orderNumber", "SO#"], ["orderDate", "Date"], ["weekNumber", "Wk"], ["companyName", "Company"],
-                  ["leCode", "LE"], ["oppId", "OPP ID"], ["placed", "Placed"], ["status", "Status"], ["total", "Total", true]]
+                  ["item", "Item"], ["leCode", "LE"], ["oppId", "OPP ID"], ["placed", "Placed"], ["status", "Status"], ["total", "Total", true]]
                   .map(([key, label, right]) => (
                     <th key={key} onClick={() => toggleSort(key)}
                       style={{ cursor: "pointer", textAlign: right ? "right" : "left", whiteSpace: "nowrap",
@@ -484,6 +500,10 @@ export default function OrderEntry() {
                   <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{dmy(o.orderDate)}</td>
                   <td style={{ padding: "8px 10px" }} className="muted" title={o.weekLabel || ""}>{o.weekNumber ?? "—"}</td>
                   <td style={{ padding: "8px 10px" }}>{o.companyName}</td>
+                  <td style={{ padding: "8px 10px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    className="muted" title={o.item || ""}>
+                    {o.item || "—"}{o.itemCount > 1 ? <span style={{ color: "var(--text-faint)" }}> +{o.itemCount - 1}</span> : ""}
+                  </td>
                   <td style={{ padding: "8px 10px" }} className="muted">{o.leCode || "—"}</td>
                   <td style={{ padding: "8px 10px" }} className="muted">{o.oppId || "—"}</td>
                   <td style={{ padding: "8px 10px", textAlign: "center" }}><Placed placed={o.placed} /></td>

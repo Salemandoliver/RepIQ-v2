@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from ...models import User
 from ...services.salesiq.fincal import financial_year_start
 from ...services.salesiq.roles import agent_matches
-from .models import ORDER_STATUS, Customer, Order, OrderAgent, OrderLine
+from .models import ORDER_STATUS, Customer, Order, OrderAgent, OrderLine, OrderStatusLog
 from .services import recompute_totals, stamp_financial_month, stamp_week
 
 # Canonical keys → list of accepted header spellings (lower/stripped). Tolerant to NetSuite variants.
@@ -324,12 +324,28 @@ def analyze(db: Session, data: bytes, filename: str, floor: date | None = None) 
 _BATCH_SIZE = 50          # commit incrementally so a slow/timed-out import still persists + resumes
 
 
-def commit(db: Session, data: bytes, filename: str, user: User, floor: date | None = None) -> dict:
+def commit(db: Session, data: bytes, filename: str, user: User, floor: date | None = None,
+           replace: bool = False) -> dict:
     """Import orders. Idempotent by SO# (re-running skips orders already in RepIQ), so a retry after
-    a timeout safely resumes. Commits in batches to keep transactions short and avoid HTTP timeouts."""
+    a timeout safely resumes. Commits in batches to keep transactions short and avoid HTTP timeouts.
+
+    ``replace=True`` first HARD-deletes every previously-imported order (source='import') + its lines,
+    agents and status log, then loads the file fresh — for when the new ERP export is the accurate
+    source of truth. Manually-created orders (source='manual') are never touched."""
     floor = floor or financial_year_start()
     orders, _, skipped_old = _group(data, filename, floor)
-    existing = {n for (n,) in db.query(Order.order_number).all()}
+    deleted = 0
+    if replace:
+        old_ids = [o.id for o in db.query(Order.id).filter(Order.source == "import").all()]
+        deleted = len(old_ids)
+        for chunk_start in range(0, len(old_ids), 500):              # delete in chunks (large IN lists)
+            chunk = old_ids[chunk_start:chunk_start + 500]
+            db.query(OrderStatusLog).filter(OrderStatusLog.order_id.in_(chunk)).delete(synchronize_session=False)
+            db.query(OrderAgent).filter(OrderAgent.order_id.in_(chunk)).delete(synchronize_session=False)
+            db.query(OrderLine).filter(OrderLine.order_id.in_(chunk)).delete(synchronize_session=False)
+            db.query(Order).filter(Order.id.in_(chunk)).delete(synchronize_session=False)
+        db.commit()
+    existing = set() if replace else {n for (n,) in db.query(Order.order_number).all()}
     batch = f"erp-{datetime.utcnow():%Y%m%d%H%M%S}"
 
     # Precompute lookups ONCE (the per-order queries were the slow part / cause of the hang).
@@ -381,6 +397,7 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
                   opp_id=od["opp_id"], main_order_number=od["main_order_number"],
                   cancellation_date=od["cancellation_date"],
                   order_cancelled=(od["status"] == "M"), source="import", import_batch=batch,
+                  placed=True, placed_at=datetime.utcnow(),   # imported = already placed in BT (editable after)
                   created_by_id=user.id)
         stamp_financial_month(o)
         stamp_week(o)
@@ -406,4 +423,4 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
             pending = 0
     db.commit()
     return {"created": created, "skippedExisting": len(orders) - created,
-            "skippedBeforeFY": skipped_old, "batch": batch}
+            "skippedBeforeFY": skipped_old, "deleted": deleted, "replaced": replace, "batch": batch}

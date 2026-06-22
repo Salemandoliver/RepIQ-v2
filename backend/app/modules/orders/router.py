@@ -216,7 +216,9 @@ def list_orders(status: str | None = None, q: str | None = None, le_code: str | 
     if date_to:
         query = query.filter(Order.order_date <= _pd(date_to))
     total = query.count()
-    rows = (query.order_by(Order.order_date.desc(), Order.order_number.desc())
+    from sqlalchemy.orm import selectinload
+    rows = (query.options(selectinload(Order.lines))
+            .order_by(Order.order_date.desc(), Order.order_number.desc())
             .offset(max(0, offset)).limit(max(1, min(500, limit))).all())
     return {"total": total, "orders": [order_to_dict(db, o) for o in rows], "role": role}
 

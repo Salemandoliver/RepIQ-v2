@@ -150,6 +150,10 @@ def order_to_dict(db: Session, o: Order, *, full: bool = False) -> dict:
         "subtotal": o.subtotal, "total": o.total, "currency": o.currency, "locked": o.locked,
         "source": o.source,
     }
+    # Order Item summary for the main list — the first line's product, + a count if there are more.
+    _lns = sorted([ln for ln in o.lines if ln.deleted_at is None], key=lambda x: x.line_no)
+    d["item"] = _lns[0].item_name if _lns else None
+    d["itemCount"] = len(_lns)
     if not full:
         return d
     d.update({
