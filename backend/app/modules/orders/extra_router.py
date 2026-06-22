@@ -130,8 +130,8 @@ def import_progress(job_id: str, db=Depends(get_db), user: User = Depends(get_cu
 async def import_rate_card_ep(file: UploadFile = File(...), db=Depends(get_db),
                              user: User = Depends(get_current_user)):
     """Load the yearly BT rate card (.xlsx) into the product catalogue — products, Schedule 5 areas,
-    Data/Cloud/Mobile categories and current commission rates (admin)."""
-    require_admin(db, user)
+    Data/Cloud/Mobile categories and current commission rates (Operations + admin)."""
+    require_write(db, user)
     data = await file.read()
     try:
         from .ratecard import import_rate_card
@@ -159,7 +159,7 @@ def erp_dump_report(db=Depends(get_db), user: User = Depends(get_current_user)):
     if order_role(db, user) not in (ADMIN, OPERATIONS):
         raise HTTPException(403, "Operations/admin only")
     headers = ["SO#", "Order Date", "Company Name", "LE", "OPP ID", "Order Status",
-               "Item", "Product Group 1", "Product Group 2", "Schedule 5 Area",
+               "Product", "Product Group 1", "Product Group 2", "Schedule 5 Area",
                "Contract Value", "Quantity", "GM", "BT Commission Paid", "Schedule 5 Check"]
     rows = []
     q = (db.query(Order, OrderLine).join(OrderLine, OrderLine.order_id == Order.id)

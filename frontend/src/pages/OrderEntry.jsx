@@ -105,7 +105,7 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
     <div>
       <div style={{ overflowX: "auto" }}>
       <table className="data siq-perf" style={{ width: "100%" }}>
-        <thead><tr><th>Item</th><th>Sch5</th><th className="num">Contract</th><th className="num">GM</th><th className="num">Qty</th><th>BT&nbsp;Paid</th>{canWrite && <th></th>}</tr></thead>
+        <thead><tr><th>Product</th><th>Sch5</th><th className="num">Contract</th><th className="num">GM</th><th className="num">Qty</th><th>BT&nbsp;Paid</th>{canWrite && <th></th>}</tr></thead>
         <tbody>
           {(order.lines || []).map((l) => (
             <tr key={l.id}>
@@ -122,7 +122,7 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
               {canWrite && <td style={{ whiteSpace: "nowrap" }}><a className="hr-action" style={{ cursor: "pointer" }} onClick={() => setDraft({ ...blank, ...l })}>Edit</a> · <a className="hr-action" style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => del(l.id)}>×</a></td>}
             </tr>
           ))}
-          {(order.lines || []).length === 0 && <tr><td colSpan={7} className="muted small">No line items yet.</td></tr>}
+          {(order.lines || []).length === 0 && <tr><td colSpan={7} className="muted small">No products yet.</td></tr>}
         </tbody>
       </table>
       </div>
@@ -130,7 +130,7 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
       {draft && (
         <div className="siq-note" style={{ marginTop: 10 }}>
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label={`Item — pick from Rate Card (${products.length} products)`} w="1 1 100%">
+            <Field label={`Product — pick from Rate Card (${products.length} products)`} w="1 1 100%">
               <ItemPicker value={draft.item} products={products}
                 onText={(v) => onItem(v)}
                 onPick={(p) => setDraft((d) => ({ ...d, item: p.name, productId: p.id,
@@ -221,14 +221,16 @@ function OrderForm({ id, meta, onClose, onSaved }) {
   const toast = useToast();
   const [o, setO] = useState(null);
   const [tab, setTab] = useState("summary");
+  const [createdId, setCreatedId] = useState(null);   // set once a brand-new order is created
   const canWrite = meta.canWrite;
-  const isNew = id === "new";
+  const isNew = id === "new" && !createdId;
 
   const load = () => {
-    if (isNew) { setO({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", placed: false, lines: [], agents: [] }); return; }
-    api.get(`/api/v1/orders/${id}`).then(setO).catch((e) => toast(e.message, "error"));
+    const realId = createdId || (id !== "new" ? id : null);
+    if (!realId) { setO({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", placed: false, _qty: 1, _repPct: 100, lines: [], agents: [] }); return; }
+    api.get(`/api/v1/orders/${realId}`).then(setO).catch((e) => toast(e.message, "error"));
   };
-  useEffect(load, [id]);
+  useEffect(load, [id, createdId]);
   const set = (k, v) => setO((p) => ({ ...p, [k]: v }));
 
   const saveHeader = async () => {
@@ -241,8 +243,30 @@ function OrderForm({ id, meta, onClose, onSaved }) {
       placed: !!o.placed, weekNumber: o.weekNumber,
     };
     try {
-      if (isNew) { const created = await api.post("/api/v1/orders", body); setO(created); onSaved(); toast(`Order ${created.orderNumber} created`, "success"); }
-      else { const upd = await api.patch(`/api/v1/orders/${o.id}`, body); setO(upd); onSaved(); toast("Order saved", "success"); }
+      if (isNew) {
+        if (!(o.companyName || o.leCode)) return toast("Add a company name or LE code first", "error");
+        const created = await api.post("/api/v1/orders", body);
+        // Optional opening line item entered on the new-order form.
+        if (o._item || o._gm || o._contract) {
+          await api.post(`/api/v1/orders/${created.id}/lines`, {
+            item: o._item || "", productId: o._productId || "",
+            contractValue: Number(o._contract || 0), gm: Number(o._gm || 0),
+            quantity: Number(o._qty || 1), newRen: "new",
+          });
+        }
+        // Optional primary sales rep / BC.
+        if (o._repId) {
+          const person = (meta.people || []).find((p) => String(p.id) === String(o._repId));
+          await api.put(`/api/v1/orders/${created.id}/agents`, { agents: [{
+            userId: person ? person.id : null, name: person ? person.name : "",
+            salesRole: "first_sales_rep", isPrimary: true, contributionPct: Number(o._repPct || 100),
+          }] });
+        }
+        onSaved(); toast(`Order ${created.orderNumber} created`, "success");
+        setCreatedId(created.id);   // reloads the full order + reveals Items / Sales Team tabs
+      } else {
+        const upd = await api.patch(`/api/v1/orders/${o.id}`, body); setO(upd); onSaved(); toast("Order saved", "success");
+      }
     } catch (e) { toast(e.message, "error"); }
   };
   const changeStatus = async (status) => {
@@ -252,7 +276,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
 
   if (!o) return <Modal wide title="Order" onClose={onClose}><Skeleton h={200} /></Modal>;
   const title = isNew ? "New order" : `${o.orderNumber} · ${o.companyName || ""}`;
-  const tabs = isNew ? [["summary", "Summary"]] : [["summary", "Summary"], ["items", "Items"], ["team", "Sales Team"]];
+  const tabs = isNew ? [["summary", "Summary"]] : [["summary", "Summary"], ["items", "Products"], ["team", "Sales Team"]];
 
   return (
     <Modal wide title={title} onClose={onClose}>
@@ -312,6 +336,11 @@ function OrderForm({ id, meta, onClose, onSaved }) {
                 {(meta.acquisition || []).map((a) => <option key={a} value={a}>{ACQ_LABEL[a] || a}</option>)}
               </select>
             </Field>
+            {isNew && <Field label="Order status">
+              <select className="input" value={o.status || "O"} onChange={(e) => set("status", e.target.value)}>
+                {meta.statuses.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+              </select>
+            </Field>}
           </div>
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
             <Field label="OPP ID"><input className="input" value={o.oppId || ""} onChange={(e) => set("oppId", e.target.value)} /></Field>
@@ -327,7 +356,33 @@ function OrderForm({ id, meta, onClose, onSaved }) {
             <input type="checkbox" checked={!!o.orderCancelled} onChange={(e) => set("orderCancelled", e.target.checked)} /> Order cancelled
           </label>
           {o.orderCancelled && <Field label="Cancellation reason" w="1 1 100%"><input className="input" value={o.cancellationReason || ""} onChange={(e) => set("cancellationReason", e.target.value)} /></Field>}
-          {canWrite && <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={saveHeader} disabled={o.locked}>{isNew ? "Create order" : "Save"}</button>}
+
+          {/* New orders: capture the first line + the sales rep up front (more can be added after creating). */}
+          {isNew && (
+            <div style={{ marginTop: 12, padding: 12, border: "1px dashed var(--border)", borderRadius: 8, background: "#fafbfc" }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Opening product &amp; sales rep <span className="muted small" style={{ fontWeight: 400 }}>— optional; add more on the Products / Sales Team tabs after creating</span></div>
+              <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
+                <Field label={`Product — Rate Card (${(meta.products || []).length})`} w="1 1 100%">
+                  <ItemPicker value={o._item || ""} products={meta.products || []}
+                    onText={(v) => set("_item", v)}
+                    onPick={(p) => setO((d) => ({ ...d, _item: p.name, _productId: p.id }))} />
+                </Field>
+                <Field label="SOV / Contract value (£)"><input className="input" type="number" value={o._contract || ""} onChange={(e) => set("_contract", e.target.value)} /></Field>
+                <Field label="GM (£)"><input className="input" type="number" value={o._gm || ""} onChange={(e) => set("_gm", e.target.value)} /></Field>
+                <Field label="Qty" w="0 0 80px"><input className="input" type="number" value={o._qty ?? 1} onChange={(e) => set("_qty", e.target.value)} /></Field>
+              </div>
+              <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
+                <Field label="Primary sales rep / BC">
+                  <select className="input" value={o._repId || ""} onChange={(e) => set("_repId", e.target.value)}>
+                    <option value="">— none —</option>
+                    {(meta.people || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Contribution %" w="0 0 140px"><input className="input" type="number" value={o._repPct ?? 100} onChange={(e) => set("_repPct", e.target.value)} /></Field>
+              </div>
+            </div>
+          )}
+          {canWrite && <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={saveHeader} disabled={o.locked}>{isNew ? "Create order" : "Save"}</button>}
         </div>
       )}
       {tab === "items" && <ItemsTab order={o} meta={meta} canWrite={canWrite && !o.locked} onChange={load} />}
@@ -531,12 +586,12 @@ export default function OrderEntry() {
       <div className="spread" style={{ flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 26 }}>Order Entry</h1>
-          <div className="muted small">{data ? `${data.total} orders` : "Sales orders, line items, status & commission"}</div>
+          <div className="muted small">{data ? `${data.total} orders` : "Sales orders, products, status & commission"}</div>
         </div>
         <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <button className="btn btn-outline btn-sm" onClick={() => download("status-search", "order-status.csv")}>⤓ Status CSV</button>
           <button className="btn btn-outline btn-sm" onClick={() => download("erp-dump", "erp-dump.csv")}>⤓ ERP dump</button>
-          {isAdmin && <button className="btn btn-outline btn-sm" onClick={uploadRateCard}>↑ Rate card</button>}
+          {meta?.canWrite && <button className="btn btn-outline btn-sm" onClick={uploadRateCard}>↑ Rate card</button>}
           {meta?.canWrite && <button className="btn btn-outline" onClick={() => setImporting(true)}>⇪ Import</button>}
           {meta?.canWrite && <button className="btn btn-primary" onClick={() => setOpen("new")}>+ New order</button>}
         </div>
@@ -585,7 +640,7 @@ export default function OrderEntry() {
             <thead>
               <tr>
                 {[["orderNumber", "SO#"], ["orderDate", "Date"], ["weekNumber", "Wk"], ["companyName", "Company"],
-                  ["item", "Item"], ["leCode", "LE"], ["oppId", "OPP ID"], ["placed", "Placed"], ["status", "Status"], ["total", "Total", true]]
+                  ["item", "Product"], ["leCode", "LE"], ["oppId", "OPP ID"], ["placed", "Placed"], ["status", "Status"], ["total", "Total", true]]
                   .map(([key, label, right]) => (
                     <th key={key} onClick={() => toggleSort(key)}
                       style={{ cursor: "pointer", textAlign: right ? "right" : "left", whiteSpace: "nowrap",

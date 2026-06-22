@@ -80,6 +80,25 @@ def _build_index(headers: list[str]) -> tuple[dict, list[str]]:
                 idx[key] = norm.index(sp)
                 used.add(norm.index(sp))
                 break
+
+    # Fuzzy fallback for the sales-team columns — ERP exports word these differently across versions
+    # ("Sales Team Member", "Primary Sales Rep Name", …). Only used when an exact synonym didn't hit.
+    def _fuzzy(key, want_all, want_any=None, avoid=()):
+        if key in idx:
+            return
+        for i, h in enumerate(norm):
+            if i in used or not h:
+                continue
+            if (all(w in h for w in want_all)
+                    and (not want_any or any(a in h for a in want_any))
+                    and not any(b in h for b in avoid)):
+                idx[key] = i
+                used.add(i)
+                return
+    _fuzzy("sales_role", ["sales", "role"])
+    _fuzzy("sales_rep", ["sales"], want_any=["member", "rep", "person", "agent", "team"],
+           avoid=["role", "admin", "order", "status", "issue", "dirty"])
+
     unmatched = [headers[i] for i in range(len(headers)) if i not in used and norm[i]]
     return idx, unmatched
 
@@ -315,10 +334,17 @@ def _group(data: bytes, filename: str, floor: date):
         })
         rep = _cell(row, idx, "sales_rep")
         if rep:
-            a = o["agents"].setdefault(str(rep), {
-                "name": str(rep), "sales_role": _cell(row, idx, "sales_role"),
-                "is_primary": _norm(str(_cell(row, idx, "primary") or "")) in ("y", "yes", "true", "1"),
-                "contribution_pct": _to_float(_cell(row, idx, "contribution_pct")),
+            rep_name = re.sub(r"\s+", " ", str(rep)).strip()    # collapse the ERP's double spaces
+            role_txt = _norm(str(_cell(row, idx, "sales_role") or ""))
+            contrib = _to_float(_cell(row, idx, "contribution_pct"))
+            if 0 < contrib <= 1:                                # ERP stores a fraction (1.0 = 100%)
+                contrib *= 100
+            o["agents"].setdefault(rep_name, {
+                "name": rep_name, "sales_role": _cell(row, idx, "sales_role"),
+                # No separate "Primary" column — the closer/first-rep role IS the primary.
+                "is_primary": ("first" in role_txt or "primary" in role_txt or "closer" in role_txt)
+                              or _norm(str(_cell(row, idx, "primary") or "")) in ("y", "yes", "true", "1"),
+                "contribution_pct": contrib,
             })
     return list(orders.values()), unmatched, skipped_old
 
