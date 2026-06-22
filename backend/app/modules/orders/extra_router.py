@@ -67,6 +67,23 @@ async def import_commit(file: UploadFile = File(...), db=Depends(get_db),
         raise HTTPException(400, str(e))
 
 
+@router.post("/import/rate-card")
+async def import_rate_card_ep(file: UploadFile = File(...), db=Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    """Load the yearly BT rate card (.xlsx) into the product catalogue — products, Schedule 5 areas,
+    Data/Cloud/Mobile categories and current commission rates (admin)."""
+    require_admin(db, user)
+    data = await file.read()
+    try:
+        from .ratecard import import_rate_card
+        return import_rate_card(db, data, file.filename or "ratecard.xlsx")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Rate card import failed: {e}")
+
+
 def _csv_response(headers: list[str], rows: list[list], filename: str) -> StreamingResponse:
     buf = io.StringIO()
     w = csv.writer(buf)

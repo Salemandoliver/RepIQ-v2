@@ -90,15 +90,18 @@ def _scope_query(db, user: User, role: str):
 @router.get("/meta")
 def meta(db=Depends(get_db), user: User = Depends(get_current_user)):
     role = order_role(db, user)
+    from .categories import CATEGORIES, bt_category
     products = (db.query(OrderProduct).filter(OrderProduct.deleted_at.is_(None),
                 OrderProduct.active.is_(True)).order_by(OrderProduct.name).all())
     return {
         "role": role, "canWrite": role in (ADMIN, OPERATIONS), "canDelete": role == ADMIN,
         "statuses": [{"code": c, "label": l, "badge": STATUS_BADGE[c]} for c, l in ORDER_STATUS.items()],
-        "acquisition": ACQUISITION_STATUS, "schedule5Check": SCHEDULE5_CHECK,
+        "acquisition": ACQUISITION_STATUS, "schedule5Check": SCHEDULE5_CHECK, "categories": CATEGORIES,
         "products": [{"id": str(p.id), "name": p.name, "class": p.product_class,
                       "group1": p.product_group1, "group2": p.product_group2,
-                      "schedule5Area": p.schedule5_area, "cobra": p.cobra} for p in products],
+                      "schedule5Area": p.schedule5_area, "cobra": p.cobra,
+                      "category": bt_category(p.product_group1, p.product_group2, p.product_class, p.schedule5_area),
+                      "rate": (p.extra or {}).get("rate")} for p in products],
     }
 
 

@@ -86,9 +86,11 @@ def _user_name(db: Session, uid: int | None) -> str | None:
 
 
 def line_to_dict(ln: OrderLine) -> dict:
+    from .categories import line_category
     return {
         "id": str(ln.id), "lineNo": ln.line_no, "productId": str(ln.product_id) if ln.product_id else None,
         "item": ln.item_name, "contractValue": ln.contract_value, "quantity": ln.quantity,
+        "btCategory": line_category(ln),
         "newRen": ln.new_ren, "schedule5Area": ln.schedule5_area, "productGroup1": ln.product_group1,
         "productGroup2": ln.product_group2, "cobra": ln.cobra, "gm": ln.gm, "jobNumber": ln.job_number,
         "primarySplitPct": ln.primary_split_pct, "secondSplitPct": ln.second_split_pct,
@@ -144,4 +146,6 @@ def order_to_dict(db: Session, o: Order, *, full: bool = False) -> dict:
         "lines": [line_to_dict(ln) for ln in sorted(o.lines, key=lambda x: x.line_no) if ln.deleted_at is None],
         "agents": [agent_to_dict(a) for a in o.agents if a.deleted_at is None],
     })
+    from .categories import order_breakdown
+    d["categories"] = order_breakdown(o)     # GM/SOV per Data / Cloud / Mobile (what BT targets on)
     return d

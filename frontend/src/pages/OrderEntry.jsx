@@ -60,7 +60,7 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
         <tbody>
           {(order.lines || []).map((l) => (
             <tr key={l.id}>
-              <td>{l.item}</td><td className="muted">{l.schedule5Area || "—"}</td>
+              <td>{l.item}{l.btCategory ? <span className="siq-chip" style={{ fontSize: 10, marginLeft: 5 }}>{l.btCategory}</span> : null}</td><td className="muted">{l.schedule5Area || "—"}</td>
               <td className="num">{gbp(l.contractValue)}</td><td className="num">{gbp(l.gm)}</td>
               <td className="num">{l.quantity}</td>
               <td>{l.btCommissionPaid ? <span style={{ color: "var(--green)" }}>✓</span> : "—"}</td>
@@ -189,6 +189,9 @@ function OrderForm({ id, meta, onClose, onSaved }) {
         </select>}
         <span className="muted small">Total {gbp(o.total)} · {o.financialMonth ? `FY month ${dmy(o.financialMonth)}` : ""}{o.locked ? " · 🔒 locked" : ""}</span>
       </div>}
+      {!isNew && o.categories && <div className="muted small" style={{ marginBottom: 10 }}>
+        BT targeting split — Data {gbp(o.categories.Data)} · Cloud {gbp(o.categories.Cloud)} · Mobile {gbp(o.categories.Mobile)}
+      </div>}
 
       <div className="tabs" style={{ marginBottom: 12 }}>
         {tabs.map(([k, l]) => <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
@@ -293,6 +296,21 @@ export default function OrderEntry() {
   };
   const bump = () => setReload((k) => k + 1);
 
+  const uploadRateCard = () => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".xlsx,.xlsm";
+    inp.onchange = async () => {
+      if (!inp.files[0]) return;
+      const fd = new FormData(); fd.append("file", inp.files[0]);
+      try {
+        const r = await api.upload("/api/v1/orders/import/rate-card", fd);
+        toast(`Rate card loaded — ${r.products} BT products`, "success");
+        api.get("/api/v1/orders/meta").then(setMeta).catch(() => {});
+      } catch (e) { toast(e.message, "error"); }
+    };
+    inp.click();
+  };
+
   return (
     <div className="page" style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 22px 60px" }}>
       <div className="spread" style={{ flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
@@ -303,6 +321,7 @@ export default function OrderEntry() {
         <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <button className="btn btn-outline btn-sm" onClick={() => download("status-search", "order-status.csv")}>⤓ Status CSV</button>
           <button className="btn btn-outline btn-sm" onClick={() => download("erp-dump", "erp-dump.csv")}>⤓ ERP dump</button>
+          {isAdmin && <button className="btn btn-outline btn-sm" onClick={uploadRateCard}>↑ Rate card</button>}
           {meta?.canWrite && <button className="btn btn-outline" onClick={() => setImporting(true)}>⇪ Import</button>}
           {meta?.canWrite && <button className="btn btn-primary" onClick={() => setOpen("new")}>+ New order</button>}
         </div>
