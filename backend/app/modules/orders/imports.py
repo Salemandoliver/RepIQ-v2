@@ -320,9 +320,9 @@ def _group(data: bytes, filename: str, floor: date):
             "acquisition": _acq_code(_cell(row, idx, "acquisition")),
             "order_notes": _cell(row, idx, "order_notes"),
             "actual_closed": _to_date(_cell(row, idx, "actual_closed")),
-            "lines": [], "agents": {},
+            "lines": [], "agents": {}, "_line_keys": set(),
         })
-        o["lines"].append({
+        line = {
             "item": _cell(row, idx, "item") or "", "group1": _cell(row, idx, "group1"),
             "group2": _cell(row, idx, "group2"), "klass": _cell(row, idx, "klass"),
             "schedule5": _cell(row, idx, "schedule5"),
@@ -331,7 +331,15 @@ def _group(data: bytes, filename: str, floor: date):
             "gm": _to_float(_cell(row, idx, "gm")),
             "bt_commission_paid": _yn(_cell(row, idx, "bt_commission_paid")),
             "schedule5_check": _s5check(_cell(row, idx, "schedule5_check")),
-        })
+        }
+        # A SPLIT order repeats the SAME product line once per sales-team member (the GM column is the
+        # FULL line GM on every such row, the split is in Contribution %). So de-dupe by line content
+        # — otherwise we'd add the GM twice. The agents below are still collected from every row.
+        lk = (line["item"], round(line["contract_value"], 2), round(line["gm"], 2),
+              line["group2"], line["schedule5"], line["quantity"])
+        if lk not in o["_line_keys"]:
+            o["_line_keys"].add(lk)
+            o["lines"].append(line)
         rep = _cell(row, idx, "sales_rep")
         if rep:
             rep_name = re.sub(r"\s+", " ", str(rep)).strip()    # collapse the ERP's double spaces

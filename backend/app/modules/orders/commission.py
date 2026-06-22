@@ -75,7 +75,9 @@ def calculate(db: Session, fin_month: date, plan: PayPlan | None) -> dict:
         for ln in o.lines:
             if ln.deleted_at is not None or not ln.bt_commission_paid:
                 continue
-            gm = ln.gm or 0.0
+            # We pay on what BT actually paid us — the Cobra GM — when it's been entered (admin);
+            # otherwise fall back to the order's GM.
+            gm = (ln.cobra_gm if ln.cobra_gm is not None else ln.gm) or 0.0
             if gm < min_gm:
                 continue
             line_comm = gm * _rate_for(ln, cfg) / 100.0

@@ -262,6 +262,8 @@ def update_order(oid: str, body: dict, request: Request, db=Depends(get_db), use
     if o.locked and order_role(db, user) != ADMIN:
         raise HTTPException(409, "Order is locked (commission month closed) — admin override required")
     _apply_fields(db, o, body)
+    if "status" in body and (str(body.get("status") or "").upper() or o.status) != o.status:
+        set_status(db, o, body["status"], user)        # routes through the state machine + log
     if "orderDate" in body:
         stamp_financial_month(o)
     _apply_week(o, body, date_changed="orderDate" in body)
@@ -306,7 +308,7 @@ def delete_order(oid: str, request: Request, db=Depends(get_db), user: User = De
 
 
 # ----------------------------------------------------------------- line items
-def _apply_line(ln: OrderLine, b: dict):
+def _apply_line(ln: OrderLine, b: dict, *, is_admin: bool = False):
     for k, col in (("item", "item_name"), ("newRen", "new_ren"), ("schedule5Area", "schedule5_area"),
                    ("productGroup1", "product_group1"), ("productGroup2", "product_group2"),
                    ("cobra", "cobra"), ("jobNumber", "job_number"), ("schedule5Check", "schedule5_check"),
@@ -327,6 +329,10 @@ def _apply_line(ln: OrderLine, b: dict):
         ln.date_closed = _pd(b["dateClosed"])
     if "dateChecked" in b:
         ln.date_checked = _pd(b["dateChecked"])
+    # Cobra GM (what BT actually paid) is admin-only — silently ignored for non-admins.
+    if is_admin and "cobraGm" in b:
+        v = b["cobraGm"]
+        ln.cobra_gm = float(v) if str(v).strip() not in ("", "None", "null") else None
 
 
 @router.post("/{oid}/lines")
@@ -337,7 +343,7 @@ def add_line(oid: str, body: dict, db=Depends(get_db), user: User = Depends(get_
         raise HTTPException(404, "Order not found")
     n = max([ln.line_no for ln in o.lines] + [0]) + 1
     ln = OrderLine(order_id=o.id, line_no=n)
-    _apply_line(ln, body)
+    _apply_line(ln, body, is_admin=order_role(db, user) == ADMIN)
     db.add(ln)
     db.flush()
     recompute_totals(o)
@@ -351,7 +357,7 @@ def update_line(oid: str, lid: str, body: dict, db=Depends(get_db), user: User =
     ln = db.get(OrderLine, lid)
     if not ln or ln.order_id != oid:
         raise HTTPException(404, "Line not found")
-    _apply_line(ln, body)
+    _apply_line(ln, body, is_admin=order_role(db, user) == ADMIN)
     db.flush()
     recompute_totals(ln.order)
     db.commit()

@@ -148,6 +148,9 @@ class OrderLine(DomainBase, Base):
     product_group2: Mapped[str | None] = mapped_column(String(80), nullable=True)
     cobra: Mapped[str | None] = mapped_column(String(60), nullable=True)
     gm: Mapped[float] = mapped_column(Float, default=0.0)                              # gross margin (commissionable)
+    # Cobra GM = the GM BT actually PAID us for this line (admin-entered when BT Commission Paid is
+    # ticked). Commission runs pay on this figure when present; falls back to gm otherwise.
+    cobra_gm: Mapped[float | None] = mapped_column(Float, nullable=True)
     job_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
     primary_split_pct: Mapped[float] = mapped_column(Float, default=100.0)
     second_split_pct: Mapped[float] = mapped_column(Float, default=0.0)

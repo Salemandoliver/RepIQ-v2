@@ -216,177 +216,215 @@ function AgentsTab({ order, meta, canWrite, onChange }) {
   );
 }
 
-// ---------------------------------------------------------------- order form
+// ---------------------------------------------------------------- order form (single screen)
+const SALES_ROLES = ["first_sales_rep", "second_sales_rep", "closer", "admin_agent", "agent"];
+
 function OrderForm({ id, meta, onClose, onSaved }) {
   const toast = useToast();
   const [o, setO] = useState(null);
-  const [tab, setTab] = useState("summary");
-  const [createdId, setCreatedId] = useState(null);   // set once a brand-new order is created
+  const [lines, setLines] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [removedLines, setRemovedLines] = useState([]);
+  const [createdId, setCreatedId] = useState(null);
+  const [saving, setSaving] = useState(false);
   const canWrite = meta.canWrite;
+  const isAdmin = !!meta.canDelete;       // Cobra GM (BT-paid GM) is admin-only
   const isNew = id === "new" && !createdId;
+  const people = meta.people || [];
+  const products = meta.products || [];
 
+  const hydrate = (data) => {
+    setO(data);
+    setLines((data.lines || []).map((l) => ({ ...l })));
+    setAgents((data.agents || []).map((a) => ({ ...a })));
+    setRemovedLines([]);
+  };
   const load = () => {
     const realId = createdId || (id !== "new" ? id : null);
-    if (!realId) { setO({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", placed: false, _qty: 1, _repPct: 100, lines: [], agents: [] }); return; }
-    api.get(`/api/v1/orders/${realId}`).then(setO).catch((e) => toast(e.message, "error"));
+    if (!realId) { hydrate({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", placed: false, lines: [], agents: [] }); return; }
+    api.get(`/api/v1/orders/${realId}`).then(hydrate).catch((e) => toast(e.message, "error"));
   };
   useEffect(load, [id, createdId]);
   const set = (k, v) => setO((p) => ({ ...p, [k]: v }));
 
-  const saveHeader = async () => {
-    const body = {
-      orderDate: o.orderDate, companyName: o.companyName, leCode: o.leCode,
-      leAcquisitionStatus: o.leAcquisitionStatus, oppId: o.oppId, mainOrderNumber: o.mainOrderNumber,
-      volReference: o.volReference, orderNotes: o.orderNotes, status: o.status,
-      commissionCrqRef: o.commissionCrqRef, reportingCrqRef: o.reportingCrqRef,
-      orderCancelled: o.orderCancelled, cancellationReason: o.cancellationReason,
-      placed: !!o.placed, weekNumber: o.weekNumber,
-    };
+  // ---- product lines ----
+  const blankLine = { item: "", productId: "", contractValue: "", gm: "", cobraGm: "", quantity: 1, newRen: "new", schedule5Area: "", schedule5Check: "", btCommissionPaid: false, dateClosed: "" };
+  const addLine = () => setLines([...lines, { ...blankLine }]);
+  const updLine = (i, k, v) => setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const pickProduct = (i, p) => setLines(lines.map((l, j) => (j === i ? { ...l, item: p.name, productId: p.id, productGroup1: p.group1, productGroup2: p.group2, schedule5Area: p.schedule5Area || l.schedule5Area } : l)));
+  const removeLine = (i) => { const l = lines[i]; if (l.id) setRemovedLines([...removedLines, l.id]); setLines(lines.filter((_, j) => j !== i)); };
+  const gmTotal = lines.reduce((s, l) => s + Number(l.gm || 0), 0);
+
+  // ---- sales team ----
+  const addAgent = () => setAgents([...agents, { userId: null, name: "", salesRole: agents.length ? "second_sales_rep" : "first_sales_rep", isPrimary: agents.length === 0, contributionPct: agents.length === 0 ? 100 : 0 }]);
+  const updAgent = (i, k, v) => setAgents(agents.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
+  const pickAgent = (i, uid) => { if (String(uid).startsWith("__keep_")) return; const p = people.find((x) => String(x.id) === String(uid)); setAgents(agents.map((a, j) => (j === i ? { ...a, userId: p ? p.id : null, name: p ? p.name : "" } : a))); };
+  const setPrimary = (i) => setAgents(agents.map((a, j) => ({ ...a, isPrimary: j === i })));
+  const removeAgent = (i) => setAgents(agents.filter((_, j) => j !== i));
+  const contribTotal = agents.reduce((s, a) => s + Number(a.contributionPct || 0), 0);
+
+  const headerBody = () => ({
+    orderDate: o.orderDate, companyName: o.companyName, leCode: o.leCode,
+    leAcquisitionStatus: o.leAcquisitionStatus, oppId: o.oppId, mainOrderNumber: o.mainOrderNumber,
+    volReference: o.volReference, orderNotes: o.orderNotes, status: o.status,
+    commissionCrqRef: o.commissionCrqRef, reportingCrqRef: o.reportingCrqRef,
+    orderCancelled: o.orderCancelled, cancellationReason: o.cancellationReason,
+    placed: !!o.placed, weekNumber: o.weekNumber,
+  });
+
+  // One Save persists the whole order — header + products + sales team (NetSuite-style).
+  const saveAll = async () => {
+    if (!(o.companyName || o.leCode)) return toast("Add a company name or LE code first", "error");
+    setSaving(true);
     try {
-      if (isNew) {
-        if (!(o.companyName || o.leCode)) return toast("Add a company name or LE code first", "error");
-        const created = await api.post("/api/v1/orders", body);
-        // Optional opening line item entered on the new-order form.
-        if (o._item || o._gm || o._contract) {
-          await api.post(`/api/v1/orders/${created.id}/lines`, {
-            item: o._item || "", productId: o._productId || "",
-            contractValue: Number(o._contract || 0), gm: Number(o._gm || 0),
-            quantity: Number(o._qty || 1), newRen: "new",
-          });
-        }
-        // Optional primary sales rep / BC.
-        if (o._repId) {
-          const person = (meta.people || []).find((p) => String(p.id) === String(o._repId));
-          await api.put(`/api/v1/orders/${created.id}/agents`, { agents: [{
-            userId: person ? person.id : null, name: person ? person.name : "",
-            salesRole: "first_sales_rep", isPrimary: true, contributionPct: Number(o._repPct || 100),
-          }] });
-        }
-        onSaved(); toast(`Order ${created.orderNumber} created`, "success");
-        setCreatedId(created.id);   // reloads the full order + reveals Items / Sales Team tabs
-      } else {
-        const upd = await api.patch(`/api/v1/orders/${o.id}`, body); setO(upd); onSaved(); toast("Order saved", "success");
+      let orderId;
+      let createdNumber = o.orderNumber;
+      if (isNew) { const created = await api.post("/api/v1/orders", headerBody()); orderId = created.id; createdNumber = created.orderNumber; }
+      else { await api.patch(`/api/v1/orders/${o.id}`, headerBody()); orderId = o.id; }
+
+      for (const lid of removedLines) await api.delete(`/api/v1/orders/${orderId}/lines/${lid}`);
+      for (const l of lines) {
+        if (!(l.item || l.gm || l.contractValue)) continue;     // skip blank rows
+        const lb = {
+          item: l.item || "", productId: l.productId || "",
+          contractValue: Number(l.contractValue || 0), gm: Number(l.gm || 0),
+          cobraGm: (l.cobraGm === "" || l.cobraGm == null) ? null : Number(l.cobraGm),
+          quantity: Number(l.quantity || 1), newRen: l.newRen || "new",
+          schedule5Area: l.schedule5Area || "", schedule5Check: l.schedule5Check || "",
+          btCommissionPaid: !!l.btCommissionPaid, dateClosed: l.dateClosed || "",
+        };
+        if (l.id) await api.patch(`/api/v1/orders/${orderId}/lines/${l.id}`, lb);
+        else await api.post(`/api/v1/orders/${orderId}/lines`, lb);
       }
-    } catch (e) { toast(e.message, "error"); }
-  };
-  const changeStatus = async (status) => {
-    try { const upd = await api.post(`/api/v1/orders/${o.id}/status`, { status }); setO(upd); onSaved(); }
-    catch (e) { toast(e.message, "error"); }
+      await api.put(`/api/v1/orders/${orderId}/agents`, { agents: agents.filter((a) => a.userId || a.name).map((a) => ({
+        userId: a.userId, name: a.name, salesRole: a.salesRole, isPrimary: !!a.isPrimary, contributionPct: Number(a.contributionPct || 0),
+      })) });
+
+      onSaved(); toast(isNew ? `Order ${createdNumber} created` : "Order saved", "success");
+      if (isNew) setCreatedId(orderId); else load();
+    } catch (e) { toast(e.message, "error"); } finally { setSaving(false); }
   };
 
-  if (!o) return <Modal wide title="Order" onClose={onClose}><Skeleton h={200} /></Modal>;
+  if (!o) return <Modal xl title="Order" onClose={onClose}><Skeleton h={200} /></Modal>;
   const title = isNew ? "New order" : `${o.orderNumber} · ${o.companyName || ""}`;
-  const tabs = isNew ? [["summary", "Summary"]] : [["summary", "Summary"], ["items", "Products"], ["team", "Sales Team"]];
+  const colSpan = isAdmin ? 11 : 10;
 
   return (
-    <Modal wide title={title} onClose={onClose}>
-      {!isNew && <div className="flex" style={{ gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+    <Modal xl title={title} onClose={onClose}>
+      {!isNew && <div className="flex" style={{ gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
         <Badge badge={o.badge} />
-        {canWrite && <select className="input" style={{ width: 240 }} value={o.status} onChange={(e) => changeStatus(e.target.value)}>
-          {meta.statuses.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-        </select>}
-        <span className="siq-chip" style={{ fontWeight: 700, color: o.placed ? "var(--green)" : "var(--red)", borderColor: o.placed ? "var(--green)" : "var(--red)" }}>
-          {o.placed ? "PLACED" : "NOT PLACED"}
-        </span>
+        <span className="siq-chip" style={{ fontWeight: 700, color: o.placed ? "var(--green)" : "var(--red)", borderColor: o.placed ? "var(--green)" : "var(--red)" }}>{o.placed ? "PLACED" : "NOT PLACED"}</span>
         <span className="muted small">Total {gbp(o.total)} · {o.weekLabel || ""}{o.locked ? " · 🔒 locked" : ""}</span>
-      </div>}
-      {!isNew && o.categories && <div className="muted small" style={{ marginBottom: 10 }}>
-        BT targeting split — Data {gbp(o.categories.Data)} · Cloud {gbp(o.categories.Cloud)} · Mobile {gbp(o.categories.Mobile)}
+        {o.categories && <span className="muted small">· BT split — Data {gbp(o.categories.Data)} · Cloud {gbp(o.categories.Cloud)} · Mobile {gbp(o.categories.Mobile)}</span>}
       </div>}
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, padding: 5, background: "#eef1f5",
-        borderRadius: 10, width: "fit-content" }}>
-        {tabs.map(([k, l]) => {
-          const active = tab === k;
-          return (
-            <button key={k} onClick={() => setTab(k)} style={{
-              padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
-              fontWeight: 700, fontSize: 14, letterSpacing: 0.2,
-              background: active ? "var(--accent)" : "transparent",
-              color: active ? "#fff" : "var(--text-soft)",
-              boxShadow: active ? "0 1px 4px rgba(0,0,0,.2)" : "none", transition: "all .15s ease" }}>
-              {l}
-            </button>
-          );
-        })}
+      {/* ===== Order details ===== */}
+      <div className="oe-sec" style={{ marginTop: 4 }}>Order details</div>
+      {canWrite && (
+        <label className="flex" style={{ gap: 8, alignItems: "center", marginBottom: 12, padding: "8px 12px", border: "1px solid var(--border)", borderRadius: 8, background: o.placed ? "color-mix(in srgb, var(--green) 8%, transparent)" : "color-mix(in srgb, var(--red) 6%, transparent)" }}>
+          <input type="checkbox" checked={!!o.placed} onChange={(e) => set("placed", e.target.checked)} />
+          <span style={{ fontWeight: 700 }}>Order Placed in BT systems</span>
+          <span className="muted small">— tick once it's been placed in BT; leave unticked if it's missing details or waiting.</span>
+        </label>
+      )}
+      <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
+        <Field label="Order date" w="0 0 150px"><GBDate value={o.orderDate} onChange={(v) => set("orderDate", v)} /></Field>
+        <Field label="Week #" w="0 0 120px">
+          <input className="input" type="number" value={o.weekNumber ?? ""} placeholder="auto" onChange={(e) => set("weekNumber", e.target.value)} />
+          <span className="muted" style={{ fontSize: 11 }}>{o.weekLabel || "auto from date"}</span>
+        </Field>
+        <Field label="Order status" w="0 0 220px">
+          <select className="input" value={o.status || "O"} onChange={(e) => set("status", e.target.value)}>
+            {meta.statuses.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Company name" w="1 1 240px"><input className="input" value={o.companyName || ""} onChange={(e) => set("companyName", e.target.value)} /></Field>
+        <Field label="LE code" w="0 0 150px"><input className="input" value={o.leCode || ""} onChange={(e) => set("leCode", e.target.value)} /></Field>
+        <Field label="LE acquisition status" w="0 0 170px">
+          <select className="input" value={o.leAcquisitionStatus || "acquisition"} onChange={(e) => set("leAcquisitionStatus", e.target.value)}>
+            {(meta.acquisition || []).map((a) => <option key={a} value={a}>{ACQ_LABEL[a] || a}</option>)}
+          </select>
+        </Field>
+        <Field label="OPP ID" w="0 0 160px"><input className="input" value={o.oppId || ""} onChange={(e) => set("oppId", e.target.value)} /></Field>
+        <Field label="Main order number" w="0 0 180px"><input className="input" value={o.mainOrderNumber || ""} onChange={(e) => set("mainOrderNumber", e.target.value)} /></Field>
+        <Field label="VOL reference" w="0 0 150px"><input className="input" value={o.volReference || ""} onChange={(e) => set("volReference", e.target.value)} /></Field>
+        <Field label="Commission CRQ ref" w="0 0 170px"><input className="input" value={o.commissionCrqRef || ""} onChange={(e) => set("commissionCrqRef", e.target.value)} /></Field>
+        <Field label="Reporting CRQ ref" w="0 0 170px"><input className="input" value={o.reportingCrqRef || ""} onChange={(e) => set("reportingCrqRef", e.target.value)} /></Field>
       </div>
+      <Field label="Order notes" w="1 1 100%"><textarea className="input" rows={2} value={o.orderNotes || ""} onChange={(e) => set("orderNotes", e.target.value)} /></Field>
+      <label className="flex" style={{ gap: 6, alignItems: "center", fontSize: 13 }}>
+        <input type="checkbox" checked={!!o.orderCancelled} onChange={(e) => set("orderCancelled", e.target.checked)} /> Order cancelled
+      </label>
+      {o.orderCancelled && <Field label="Cancellation reason" w="1 1 100%"><input className="input" value={o.cancellationReason || ""} onChange={(e) => set("cancellationReason", e.target.value)} /></Field>}
 
-      {tab === "summary" && (
-        <div>
-          {/* Order Placed — the key operational flag (mirrors the Sales Tracker's "Order Placed?"). */}
-          {canWrite && (
-            <label className="flex" style={{ gap: 8, alignItems: "center", marginBottom: 12, padding: "8px 12px",
-              border: "1px solid var(--border)", borderRadius: 8, background: o.placed ? "color-mix(in srgb, var(--green) 8%, transparent)" : "color-mix(in srgb, var(--red) 6%, transparent)" }}>
-              <input type="checkbox" checked={!!o.placed} onChange={(e) => set("placed", e.target.checked)} />
-              <span style={{ fontWeight: 700 }}>Order Placed in BT systems</span>
-              <span className="muted small">— tick once it's been placed; leave unticked if details are missing or it's waiting on something.</span>
-            </label>
-          )}
-          <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label="Order date"><GBDate value={o.orderDate} onChange={(v) => set("orderDate", v)} /></Field>
-            <Field label="Week #" w="0 0 130px">
-              <input className="input" type="number" value={o.weekNumber ?? ""} placeholder="auto"
-                onChange={(e) => set("weekNumber", e.target.value)} />
-              <span className="muted" style={{ fontSize: 11 }}>{o.weekLabel || "auto from order date"}</span>
-            </Field>
-            <Field label="Company name" w="1 1 240px"><input className="input" value={o.companyName || ""} onChange={(e) => set("companyName", e.target.value)} /></Field>
-            <Field label="LE code"><input className="input" value={o.leCode || ""} onChange={(e) => set("leCode", e.target.value)} /></Field>
-            <Field label="LE acquisition status">
-              <select className="input" value={o.leAcquisitionStatus || "acquisition"} onChange={(e) => set("leAcquisitionStatus", e.target.value)}>
-                {(meta.acquisition || []).map((a) => <option key={a} value={a}>{ACQ_LABEL[a] || a}</option>)}
-              </select>
-            </Field>
-            {isNew && <Field label="Order status">
-              <select className="input" value={o.status || "O"} onChange={(e) => set("status", e.target.value)}>
-                {meta.statuses.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-              </select>
-            </Field>}
-          </div>
-          <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label="OPP ID"><input className="input" value={o.oppId || ""} onChange={(e) => set("oppId", e.target.value)} /></Field>
-            <Field label="Main order number"><input className="input" value={o.mainOrderNumber || ""} onChange={(e) => set("mainOrderNumber", e.target.value)} /></Field>
-            <Field label="VOL reference"><input className="input" value={o.volReference || ""} onChange={(e) => set("volReference", e.target.value)} /></Field>
-          </div>
-          <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label="Commission CRQ ref"><input className="input" value={o.commissionCrqRef || ""} onChange={(e) => set("commissionCrqRef", e.target.value)} /></Field>
-            <Field label="Reporting CRQ ref"><input className="input" value={o.reportingCrqRef || ""} onChange={(e) => set("reportingCrqRef", e.target.value)} /></Field>
-          </div>
-          <Field label="Order notes" w="1 1 100%"><textarea className="input" rows={2} value={o.orderNotes || ""} onChange={(e) => set("orderNotes", e.target.value)} /></Field>
-          <label className="flex" style={{ gap: 6, alignItems: "center", fontSize: 13, marginTop: 4 }}>
-            <input type="checkbox" checked={!!o.orderCancelled} onChange={(e) => set("orderCancelled", e.target.checked)} /> Order cancelled
-          </label>
-          {o.orderCancelled && <Field label="Cancellation reason" w="1 1 100%"><input className="input" value={o.cancellationReason || ""} onChange={(e) => set("cancellationReason", e.target.value)} /></Field>}
+      {/* ===== Products ===== */}
+      <div className="oe-sec">Products <span className="muted small" style={{ fontWeight: 400 }}>· order GM total {gbp(gmTotal)}</span></div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="oe-grid">
+          <thead><tr>
+            <th style={{ minWidth: 240 }}>Product</th><th className="num">Contract £</th><th className="num">GM £</th>
+            {isAdmin && <th className="num" title="What BT actually paid us — drives commission">Cobra GM £</th>}
+            <th className="num">Qty</th><th>New/Ren</th><th>Sch5 Area</th><th>Sch5 Check</th><th>BT&nbsp;Paid</th><th>Date closed</th><th></th>
+          </tr></thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={l.id || `n${i}`}>
+                <td><ItemPicker value={l.item} products={products} onText={(v) => updLine(i, "item", v)} onPick={(p) => pickProduct(i, p)} /></td>
+                <td><input className="input" type="number" style={{ width: 92 }} value={l.contractValue ?? ""} onChange={(e) => updLine(i, "contractValue", e.target.value)} /></td>
+                <td><input className="input" type="number" style={{ width: 84 }} value={l.gm ?? ""} onChange={(e) => updLine(i, "gm", e.target.value)} /></td>
+                {isAdmin && <td><input className="input" type="number" style={{ width: 92, background: l.btCommissionPaid ? "color-mix(in srgb, var(--green) 8%, transparent)" : undefined }} value={l.cobraGm ?? ""} placeholder={l.btCommissionPaid ? "BT paid" : "—"} onChange={(e) => updLine(i, "cobraGm", e.target.value)} /></td>}
+                <td><input className="input" type="number" style={{ width: 52 }} value={l.quantity ?? 1} onChange={(e) => updLine(i, "quantity", e.target.value)} /></td>
+                <td><select className="input" value={l.newRen || "new"} onChange={(e) => updLine(i, "newRen", e.target.value)}><option value="new">New</option><option value="renewal">Renewal</option></select></td>
+                <td><input className="input" style={{ width: 110 }} value={l.schedule5Area || ""} onChange={(e) => updLine(i, "schedule5Area", e.target.value)} /></td>
+                <td><select className="input" value={l.schedule5Check || ""} onChange={(e) => updLine(i, "schedule5Check", e.target.value)}><option value="">—</option>{(meta.schedule5Check || []).map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}</select></td>
+                <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!l.btCommissionPaid} onChange={(e) => updLine(i, "btCommissionPaid", e.target.checked)} /></td>
+                <td><GBDate value={l.dateClosed || ""} onChange={(v) => updLine(i, "dateClosed", v)} /></td>
+                <td>{canWrite && <a className="hr-action" style={{ color: "var(--red)", cursor: "pointer", fontWeight: 700 }} onClick={() => removeLine(i)}>×</a>}</td>
+              </tr>
+            ))}
+            {lines.length === 0 && <tr><td colSpan={colSpan} className="muted small">No products yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {canWrite && <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={addLine}>+ Add product</button>}
+      {isAdmin && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Cobra GM = what BT actually paid us (admin only). Commission runs pay on this when set.</div>}
 
-          {/* New orders: capture the first line + the sales rep up front (more can be added after creating). */}
-          {isNew && (
-            <div style={{ marginTop: 12, padding: 12, border: "1px dashed var(--border)", borderRadius: 8, background: "#fafbfc" }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Opening product &amp; sales rep <span className="muted small" style={{ fontWeight: 400 }}>— optional; add more on the Products / Sales Team tabs after creating</span></div>
-              <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-                <Field label={`Product — Rate Card (${(meta.products || []).length})`} w="1 1 100%">
-                  <ItemPicker value={o._item || ""} products={meta.products || []}
-                    onText={(v) => set("_item", v)}
-                    onPick={(p) => setO((d) => ({ ...d, _item: p.name, _productId: p.id }))} />
-                </Field>
-                <Field label="SOV / Contract value (£)"><input className="input" type="number" value={o._contract || ""} onChange={(e) => set("_contract", e.target.value)} /></Field>
-                <Field label="GM (£)"><input className="input" type="number" value={o._gm || ""} onChange={(e) => set("_gm", e.target.value)} /></Field>
-                <Field label="Qty" w="0 0 80px"><input className="input" type="number" value={o._qty ?? 1} onChange={(e) => set("_qty", e.target.value)} /></Field>
-              </div>
-              <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-                <Field label="Primary sales rep / BC">
-                  <select className="input" value={o._repId || ""} onChange={(e) => set("_repId", e.target.value)}>
-                    <option value="">— none —</option>
-                    {(meta.people || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Contribution %" w="0 0 140px"><input className="input" type="number" value={o._repPct ?? 100} onChange={(e) => set("_repPct", e.target.value)} /></Field>
-              </div>
-            </div>
-          )}
-          {canWrite && <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={saveHeader} disabled={o.locked}>{isNew ? "Create order" : "Save"}</button>}
+      {/* ===== Sales team ===== */}
+      <div className="oe-sec">Sales team</div>
+      <table className="oe-grid">
+        <thead><tr><th style={{ minWidth: 220 }}>Name</th><th>Role</th><th>Primary</th><th className="num">Contribution %</th><th></th></tr></thead>
+        <tbody>
+          {agents.map((a, i) => (
+            <tr key={i}>
+              <td><select className="input" value={a.userId || (a.name ? `__keep_${a.name}` : "")} onChange={(e) => pickAgent(i, e.target.value)}>
+                <option value="">— select name —</option>
+                {!a.userId && a.name && <option value={`__keep_${a.name}`}>{a.name} (imported)</option>}
+                {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select></td>
+              <td><select className="input" value={a.salesRole || ""} onChange={(e) => updAgent(i, "salesRole", e.target.value)}>{SALES_ROLES.map((x) => <option key={x} value={x}>{x.replace(/_/g, " ")}</option>)}</select></td>
+              <td style={{ textAlign: "center" }}><input type="radio" checked={!!a.isPrimary} onChange={() => setPrimary(i)} /></td>
+              <td><input className="input" type="number" style={{ width: 80 }} value={a.contributionPct ?? 0} onChange={(e) => updAgent(i, "contributionPct", e.target.value)} /></td>
+              <td>{canWrite && <a className="hr-action" style={{ color: "var(--red)", cursor: "pointer", fontWeight: 700 }} onClick={() => removeAgent(i)}>×</a>}</td>
+            </tr>
+          ))}
+          {agents.length === 0 && <tr><td colSpan={5} className="muted small">No sales reps on this order yet.</td></tr>}
+        </tbody>
+      </table>
+      {canWrite && <div className="flex" style={{ gap: 10, alignItems: "center", marginTop: 8 }}>
+        <button className="btn btn-outline btn-sm" onClick={addAgent}>+ Add sales rep / BC</button>
+        <span className="muted small" style={{ color: agents.length && contribTotal !== 100 ? "var(--amber)" : "var(--text-soft)" }}>
+          Total contribution: {contribTotal}%{agents.length > 0 && contribTotal !== 100 ? " (should be 100%)" : ""}
+        </span>
+      </div>}
+
+      {/* ===== Sticky save bar ===== */}
+      {canWrite && (
+        <div style={{ position: "sticky", bottom: -22, background: "#fff", paddingTop: 12, paddingBottom: 4, marginTop: 18, borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end", alignItems: "center" }}>
+          {o.locked && <span className="muted small" style={{ marginRight: "auto", color: "var(--amber)" }}>🔒 Commission month locked — admin override only</span>}
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          <button className="btn btn-primary" disabled={saving || o.locked} onClick={saveAll}>{saving ? "Saving…" : isNew ? "Create order" : "Save order"}</button>
         </div>
       )}
-      {tab === "items" && <ItemsTab order={o} meta={meta} canWrite={canWrite && !o.locked} onChange={load} />}
-      {tab === "team" && <AgentsTab order={o} meta={meta} canWrite={canWrite && !o.locked} onChange={load} />}
     </Modal>
   );
 }

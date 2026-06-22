@@ -119,7 +119,7 @@ export function EmptyState({ icon = "📭", title = "Nothing here", sub }) {
   );
 }
 
-export function Modal({ title, onClose, children, wide, footer }) {
+export function Modal({ title, onClose, children, wide, xl, footer }) {
   return (
     <div
       className="modal-backdrop"
@@ -127,7 +127,7 @@ export function Modal({ title, onClose, children, wide, footer }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={"modal" + (wide ? " wide" : "")}>
+      <div className={"modal" + (xl ? " xl" : wide ? " wide" : "")}>
         <div className="spread" style={{ marginBottom: 14 }}>
           <h3 style={{ margin: 0 }}>{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
