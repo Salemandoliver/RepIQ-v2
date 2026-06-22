@@ -279,7 +279,23 @@ export default function OrderEntry() {
   const [open, setOpen] = useState(null);     // order id | "new"
   const [importing, setImporting] = useState(false);
   const [reload, setReload] = useState(0);
+  const [sort, setSort] = useState({ key: "orderDate", dir: "desc" });
   const isAdmin = user?.role === "admin";
+
+  const sorted = useMemo(() => {
+    const rows = [...(data?.orders || [])];
+    const { key, dir } = sort;
+    rows.sort((a, b) => {
+      let av = a[key], bv = b[key];
+      if (key === "total") { av = av ?? 0; bv = bv ?? 0; }
+      else { av = (av ?? "").toString().toLowerCase(); bv = (bv ?? "").toString().toLowerCase(); }
+      if (av < bv) return dir === "asc" ? -1 : 1;
+      if (av > bv) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return rows;
+  }, [data, sort]);
+  const toggleSort = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
 
   useEffect(() => { api.get("/api/v1/orders/meta").then(setMeta).catch(() => setMeta({ canWrite: false, statuses: [], products: [] })); }, []);
   useEffect(() => {
@@ -339,14 +355,30 @@ export default function OrderEntry() {
         <EmptyState icon="📦" title="No orders" sub={meta?.canWrite ? "Create one, or import the ERP dump." : "Orders you're on will appear here."} />
       ) : (
         <div className="card" style={{ overflowX: "auto" }}>
-          <table className="data siq-perf" style={{ width: "100%" }}>
-            <thead><tr><th>SO#</th><th>Date</th><th>Company</th><th>LE</th><th>OPP ID</th><th>Status</th><th className="num">Total</th></tr></thead>
+          <table className="data" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {[["orderNumber", "SO#"], ["orderDate", "Date"], ["companyName", "Company"],
+                  ["leCode", "LE"], ["oppId", "OPP ID"], ["status", "Status"], ["total", "Total", true]]
+                  .map(([key, label, right]) => (
+                    <th key={key} onClick={() => toggleSort(key)}
+                      style={{ cursor: "pointer", textAlign: right ? "right" : "left", whiteSpace: "nowrap",
+                        userSelect: "none", padding: "8px 10px", color: "var(--text-soft)", fontWeight: 600 }}>
+                      {label}{sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+                    </th>
+                  ))}
+              </tr>
+            </thead>
             <tbody>
-              {data.orders.map((o) => (
-                <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => setOpen(o.id)}>
-                  <td><b>{o.orderNumber}</b></td><td>{dmy(o.orderDate)}</td><td>{o.companyName}</td>
-                  <td className="muted">{o.leCode || "—"}</td><td className="muted">{o.oppId || "—"}</td>
-                  <td><Badge badge={o.badge} /></td><td className="num">{gbp(o.total)}</td>
+              {sorted.map((o) => (
+                <tr key={o.id} style={{ cursor: "pointer", borderTop: "1px solid var(--border)" }} onClick={() => setOpen(o.id)}>
+                  <td style={{ padding: "8px 10px" }}><b>{o.orderNumber}</b></td>
+                  <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{dmy(o.orderDate)}</td>
+                  <td style={{ padding: "8px 10px" }}>{o.companyName}</td>
+                  <td style={{ padding: "8px 10px" }} className="muted">{o.leCode || "—"}</td>
+                  <td style={{ padding: "8px 10px" }} className="muted">{o.oppId || "—"}</td>
+                  <td style={{ padding: "8px 10px" }}><Badge badge={o.badge} /></td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{gbp(o.total)}</td>
                 </tr>
               ))}
             </tbody>
