@@ -36,6 +36,44 @@ function Field({ label, children, w }) {
   );
 }
 
+// Searchable Rate Card product picker — a real dropdown that lists matching products (the native
+// <datalist> didn't reliably show the list across browsers).
+function ItemPicker({ value, products, onPick, onText }) {
+  const [open, setOpen] = useState(false);
+  const q = (value || "").trim().toLowerCase();
+  const matches = (q ? products.filter((p) => (p.name || "").toLowerCase().includes(q)) : products).slice(0, 80);
+  return (
+    <div style={{ position: "relative" }}>
+      <input className="input" value={value} placeholder="Start typing a product…" autoComplete="off"
+        onChange={(e) => { onText(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {open && products.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 60, top: "100%", left: 0, right: 0, marginTop: 2,
+          maxHeight: 240, overflowY: "auto", background: "#fff", border: "1px solid var(--border)",
+          borderRadius: 8, boxShadow: "0 10px 28px rgba(0,0,0,.18)" }}>
+          {matches.length === 0 && <div className="muted" style={{ padding: "8px 10px", fontSize: 12 }}>No matching Rate Card product — this will be saved as free text.</div>}
+          {matches.map((p) => (
+            <div key={p.id} onMouseDown={() => { onPick(p); setOpen(false); }}
+              style={{ padding: "7px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 8 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f3f5f8")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+              {p.category && <span className="muted" style={{ fontSize: 11, flexShrink: 0 }}>{p.category}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {open && products.length === 0 && (
+        <div style={{ position: "absolute", zIndex: 60, top: "100%", left: 0, right: 0, marginTop: 2, background: "#fff",
+          border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }} className="muted">
+          No Rate Card loaded yet — an admin can upload it with the "↑ Rate card" button. You can still type a free-text item.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- line items tab
 function ItemsTab({ order, meta, canWrite, onChange }) {
   const toast = useToast();
@@ -65,31 +103,39 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
 
   return (
     <div>
+      <div style={{ overflowX: "auto" }}>
       <table className="data siq-perf" style={{ width: "100%" }}>
-        <thead><tr><th>Item</th><th>Schedule 5</th><th className="num">Contract</th><th className="num">GM</th><th className="num">Qty</th><th>BT Paid</th>{canWrite && <th></th>}</tr></thead>
+        <thead><tr><th>Item</th><th>Sch5</th><th className="num">Contract</th><th className="num">GM</th><th className="num">Qty</th><th>BT&nbsp;Paid</th>{canWrite && <th></th>}</tr></thead>
         <tbody>
           {(order.lines || []).map((l) => (
             <tr key={l.id}>
-              <td>{l.item}{l.btCategory ? <span className="siq-chip" style={{ fontSize: 10, marginLeft: 5 }}>{l.btCategory}</span> : null}</td><td className="muted">{l.schedule5Area || "—"}</td>
-              <td className="num">{gbp(l.contractValue)}</td><td className="num">{gbp(l.gm)}</td>
+              <td style={{ maxWidth: 300 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.item}>{l.item}</span>
+                  {l.btCategory ? <span className="siq-chip" style={{ fontSize: 10, flexShrink: 0 }}>{l.btCategory}</span> : null}
+                </div>
+              </td>
+              <td className="muted" style={{ whiteSpace: "nowrap" }}>{l.schedule5Area || "—"}</td>
+              <td className="num" style={{ whiteSpace: "nowrap" }}>{gbp(l.contractValue)}</td><td className="num" style={{ whiteSpace: "nowrap" }}>{gbp(l.gm)}</td>
               <td className="num">{l.quantity}</td>
-              <td>{l.btCommissionPaid ? <span style={{ color: "var(--green)" }}>✓</span> : "—"}</td>
-              {canWrite && <td><a className="hr-action" style={{ cursor: "pointer" }} onClick={() => setDraft({ ...blank, ...l })}>Edit</a> · <a className="hr-action" style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => del(l.id)}>×</a></td>}
+              <td style={{ textAlign: "center" }}>{l.btCommissionPaid ? <span style={{ color: "var(--green)" }}>✓</span> : "—"}</td>
+              {canWrite && <td style={{ whiteSpace: "nowrap" }}><a className="hr-action" style={{ cursor: "pointer" }} onClick={() => setDraft({ ...blank, ...l })}>Edit</a> · <a className="hr-action" style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => del(l.id)}>×</a></td>}
             </tr>
           ))}
           {(order.lines || []).length === 0 && <tr><td colSpan={7} className="muted small">No line items yet.</td></tr>}
         </tbody>
       </table>
+      </div>
       {canWrite && !draft && <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={() => setDraft({ ...blank })}>+ Add line</button>}
       {draft && (
         <div className="siq-note" style={{ marginTop: 10 }}>
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label="Item — pick from Rate Card (type to search)" w="1 1 320px">
-              <input className="input" list="ratecard-items" value={draft.item}
-                placeholder="Start typing a product…" onChange={(e) => onItem(e.target.value)} />
-              <datalist id="ratecard-items">
-                {products.map((p) => <option key={p.id} value={p.name} />)}
-              </datalist>
+            <Field label={`Item — pick from Rate Card (${products.length} products)`} w="1 1 100%">
+              <ItemPicker value={draft.item} products={products}
+                onText={(v) => onItem(v)}
+                onPick={(p) => setDraft((d) => ({ ...d, item: p.name, productId: p.id,
+                  productGroup1: p.group1 ?? d.productGroup1, productGroup2: p.group2 ?? d.productGroup2,
+                  schedule5Area: p.schedule5Area ?? d.schedule5Area }))} />
               <span className="muted" style={{ fontSize: 11 }}>
                 {draft.productId ? "✓ matched a Rate Card product" : "free text (not on the Rate Card)"}
               </span>
@@ -224,8 +270,21 @@ function OrderForm({ id, meta, onClose, onSaved }) {
         BT targeting split — Data {gbp(o.categories.Data)} · Cloud {gbp(o.categories.Cloud)} · Mobile {gbp(o.categories.Mobile)}
       </div>}
 
-      <div className="tabs" style={{ marginBottom: 12 }}>
-        {tabs.map(([k, l]) => <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, padding: 5, background: "#eef1f5",
+        borderRadius: 10, width: "fit-content" }}>
+        {tabs.map(([k, l]) => {
+          const active = tab === k;
+          return (
+            <button key={k} onClick={() => setTab(k)} style={{
+              padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+              fontWeight: 700, fontSize: 14, letterSpacing: 0.2,
+              background: active ? "var(--accent)" : "transparent",
+              color: active ? "#fff" : "var(--text-soft)",
+              boxShadow: active ? "0 1px 4px rgba(0,0,0,.2)" : "none", transition: "all .15s ease" }}>
+              {l}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "summary" && (
@@ -284,6 +343,7 @@ function ImportModal({ onClose, onDone }) {
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [replace, setReplace] = useState(false);
+  const [job, setJob] = useState(null);          // live import progress
   const send = async (path, then) => {
     if (!file) return toast("Choose an ERP Dump file first", "error");
     setBusy(true);
@@ -291,10 +351,33 @@ function ImportModal({ onClose, onDone }) {
     try { const r = await api.upload(`/api/v1/orders/import/${path}`, fd); then(r); }
     catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
   };
-  const commit = () => send(`commit?replace=${replace}`, (r) => {
-    toast(replace ? `Replaced — deleted ${r.deleted}, imported ${r.created}` : `Imported ${r.created} orders`, "success");
-    onDone();
-  });
+  // Run the import as a background job and poll its progress (so a big replace can't time out).
+  const commit = async () => {
+    if (!file) return toast("Choose an ERP Dump file first", "error");
+    setBusy(true);
+    setJob({ status: "starting", done: 0, total: preview?.totalOrders || 0, deleted: 0 });
+    const fd = new FormData(); fd.append("file", file);
+    let jobId;
+    try { jobId = (await api.upload(`/api/v1/orders/import/start?replace=${replace}`, fd)).jobId; }
+    catch (e) { toast(e.message, "error"); setBusy(false); setJob(null); return; }
+    let misses = 0;
+    const poll = async () => {
+      try {
+        const p = await api.get(`/api/v1/orders/import/progress/${jobId}`);
+        setJob(p);
+        if (p.status === "done") {
+          toast(replace ? `Replaced — deleted ${p.deleted}, imported ${p.created}` : `Imported ${p.created} orders`, "success");
+          setBusy(false); onDone(); return;
+        }
+        if (p.status === "error") { toast(p.error || "Import failed", "error"); setBusy(false); return; }
+        setTimeout(poll, 800);
+      } catch (e) {
+        if (++misses > 5) { toast("Lost track of the import — check the list to confirm.", "error"); setBusy(false); return; }
+        setTimeout(poll, 1200);
+      }
+    };
+    setTimeout(poll, 600);
+  };
   return (
     <Modal wide title="Import orders — NetSuite ERP Dump" onClose={onClose}>
       <div className="muted small" style={{ marginBottom: 8 }}>
@@ -314,9 +397,28 @@ function ImportModal({ onClose, onDone }) {
           {busy ? "Working…" : replace ? `Replace all — import ${preview.totalOrders} orders` : `Commit import (${preview.new} new)`}
         </button>}
       </div>
-      {preview && replace && <div className="small" style={{ marginTop: 8, color: "var(--red)" }}>
+      {preview && replace && !job && <div className="small" style={{ marginTop: 8, color: "var(--red)" }}>
         Replace mode: every previously-imported order will be deleted, then all {preview.totalOrders} orders in this file imported fresh.
       </div>}
+      {job && (() => {
+        const pct = job.total ? Math.min(100, Math.round((100 * (job.done || 0)) / job.total)) : (job.status === "done" ? 100 : 0);
+        const label = job.status === "starting" ? "Starting…"
+          : job.status === "deleting" ? `Deleting old orders…`
+          : job.status === "done" ? `Done — imported ${job.created}${job.deleted ? `, deleted ${job.deleted}` : ""}`
+          : job.status === "error" ? "Failed"
+          : `Importing… ${job.done || 0} of ${job.total}${job.deleted ? ` · deleted ${job.deleted}` : ""}`;
+        return (
+          <div style={{ marginTop: 14 }}>
+            <div className="small" style={{ marginBottom: 4, color: job.status === "error" ? "var(--red)" : "var(--text-soft)" }}>{label}</div>
+            <div style={{ height: 12, background: "var(--border)", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${pct}%`,
+                background: job.status === "error" ? "var(--red)" : job.status === "done" ? "var(--green)" : "var(--accent)",
+                transition: "width .3s ease" }} />
+            </div>
+            {job.status === "error" && job.error && <div className="small" style={{ marginTop: 6, color: "var(--red)" }}>{job.error}</div>}
+          </div>
+        );
+      })()}
       {preview && (
         <div className="siq-note" style={{ marginTop: 12 }}>
           <div><b>{preview.totalOrders}</b> orders in file · <b>{preview.new}</b> new · {preview.duplicates} already in RepIQ · {preview.skippedBeforeFY} skipped (before {dmy(preview.floor)})</div>
@@ -504,8 +606,8 @@ export default function OrderEntry() {
                     className="muted" title={o.item || ""}>
                     {o.item || "—"}{o.itemCount > 1 ? <span style={{ color: "var(--text-faint)" }}> +{o.itemCount - 1}</span> : ""}
                   </td>
-                  <td style={{ padding: "8px 10px" }} className="muted">{o.leCode || "—"}</td>
-                  <td style={{ padding: "8px 10px" }} className="muted">{o.oppId || "—"}</td>
+                  <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }} className="muted">{o.leCode || "—"}</td>
+                  <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }} className="muted">{o.oppId || "—"}</td>
                   <td style={{ padding: "8px 10px", textAlign: "center" }}><Placed placed={o.placed} /></td>
                   <td style={{ padding: "8px 10px" }}><Badge badge={o.badge} /></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{gbp(o.total)}</td>

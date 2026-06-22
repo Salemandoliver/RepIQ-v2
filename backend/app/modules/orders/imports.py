@@ -37,10 +37,14 @@ HEADER_SYNONYMS = {
     "opp_id": ["opp id", "opportunity id"],
     "cancellation_date": ["cancellation date"],
     "main_order_number": ["main order number", "job number"],
-    "sales_rep": ["sales rep", "primary sales rep", "rep"],
+    "sales_rep": ["sales rep", "primary sales rep", "rep", "sales team member",
+                  "sales team member name", "sales rep name", "primary sales rep name"],
     "primary": ["primary", "primary (y/n)", "primary flag"],
-    "sales_role": ["sales role name", "sales role", "sales role: name"],
+    "sales_role": ["sales role name", "sales role", "sales role: name", "sales team role"],
     "admin_agent": ["admin agent"],
+    "acquisition": ["le acquisition status", "acquisition status", "acquisition"],
+    "order_notes": ["order notes", "notes"],
+    "actual_closed": ["actual order closed date", "actual closed date"],
     "item": ["item name (grouped)", "item: name (grouped)", "item name", "item: name", "item"],
     "item_id": ["item id"],
     "group1": ["product group 1", "product group1"],
@@ -238,6 +242,18 @@ def _s5check(v):
     return None
 
 
+def _acq_code(v):
+    """ERP 'LE Acquisition Status' text → acquisition | in_life (matches the app's two options)."""
+    t = _norm(str(v or ""))
+    if not t:
+        return None
+    if "in" in t and "life" in t:          # "In-Life", "In Life"
+        return "in_life"
+    if "acquis" in t:
+        return "acquisition"
+    return None
+
+
 def _status_code(text) -> str:
     t = _norm(str(text or ""))
     t = re.sub(r"^[a-z]\.\s*", "", t)        # strip "I. " prefix
@@ -282,6 +298,9 @@ def _group(data: bytes, filename: str, floor: date):
             "cancellation_date": _to_date(_cell(row, idx, "cancellation_date")),
             "main_order_number": _cell(row, idx, "main_order_number"),
             "admin_agent": _cell(row, idx, "admin_agent"),
+            "acquisition": _acq_code(_cell(row, idx, "acquisition")),
+            "order_notes": _cell(row, idx, "order_notes"),
+            "actual_closed": _to_date(_cell(row, idx, "actual_closed")),
             "lines": [], "agents": {},
         })
         o["lines"].append({
@@ -325,15 +344,27 @@ _BATCH_SIZE = 50          # commit incrementally so a slow/timed-out import stil
 
 
 def commit(db: Session, data: bytes, filename: str, user: User, floor: date | None = None,
-           replace: bool = False) -> dict:
+           replace: bool = False, progress=None) -> dict:
     """Import orders. Idempotent by SO# (re-running skips orders already in RepIQ), so a retry after
     a timeout safely resumes. Commits in batches to keep transactions short and avoid HTTP timeouts.
 
     ``replace=True`` first HARD-deletes every previously-imported order (source='import') + its lines,
     agents and status log, then loads the file fresh — for when the new ERP export is the accurate
-    source of truth. Manually-created orders (source='manual') are never touched."""
+    source of truth. Manually-created orders (source='manual') are never touched.
+
+    ``progress(**fields)`` (optional) is called with phase counters so a UI can show a progress bar:
+    total, done, deleted, status."""
+    def _emit(**kw):
+        if progress:
+            try:
+                progress(**kw)
+            except Exception:
+                pass
+
     floor = floor or financial_year_start()
     orders, _, skipped_old = _group(data, filename, floor)
+    total = len(orders)
+    _emit(total=total, done=0, status="deleting" if replace else "importing")
     deleted = 0
     if replace:
         old_ids = [o.id for o in db.query(Order.id).filter(Order.source == "import").all()]
@@ -345,6 +376,7 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
             db.query(OrderLine).filter(OrderLine.order_id.in_(chunk)).delete(synchronize_session=False)
             db.query(Order).filter(Order.id.in_(chunk)).delete(synchronize_session=False)
         db.commit()
+        _emit(total=total, done=0, deleted=deleted, status="importing")
     existing = set() if replace else {n for (n,) in db.query(Order.order_number).all()}
     batch = f"erp-{datetime.utcnow():%Y%m%d%H%M%S}"
 
@@ -386,9 +418,12 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
         agent_cache[agent_name] = uid
         return uid
 
-    created, pending = 0, 0
+    created, pending, processed = 0, 0, 0
     for od in orders:
+        processed += 1
         if od["so"] in existing:
+            if progress and processed % 50 == 0:
+                _emit(total=total, done=processed, deleted=deleted, status="importing")
             continue
         cust = get_customer(od["le"], od["company"] or "")
         o = Order(order_number=od["so"], order_date=od["date"] or date.today(),
@@ -396,6 +431,9 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
                   le_code=cust.le_code if cust else od["le"], customer_id=cust.id if cust else None,
                   opp_id=od["opp_id"], main_order_number=od["main_order_number"],
                   cancellation_date=od["cancellation_date"],
+                  le_acquisition_status=od.get("acquisition"),
+                  order_notes=od.get("order_notes"),
+                  actual_order_closed_date=od.get("actual_closed"),
                   order_cancelled=(od["status"] == "M"), source="import", import_batch=batch,
                   placed=True, placed_at=datetime.utcnow(),   # imported = already placed in BT (editable after)
                   created_by_id=user.id)
@@ -421,6 +459,8 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
         if pending >= _BATCH_SIZE:
             db.commit()
             pending = 0
+            _emit(total=total, done=processed, deleted=deleted, status="importing")
     db.commit()
+    _emit(total=total, done=total, deleted=deleted, created=created, status="done")
     return {"created": created, "skippedExisting": len(orders) - created,
             "skippedBeforeFY": skipped_old, "deleted": deleted, "replaced": replace, "batch": batch}

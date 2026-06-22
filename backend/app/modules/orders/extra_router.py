@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import csv
 import io
+import threading
+import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ...auth import get_current_user
-from ...db import get_db
+from ...db import SessionLocal, get_db
 from ...models import User
 from . import imports as erp
 from .models import ORDER_STATUS, Order, OrderLine, OrderProduct
@@ -67,6 +70,60 @@ async def import_commit(file: UploadFile = File(...), replace: bool = False, db=
     except ValueError as e:
         db.rollback()
         raise HTTPException(400, str(e))
+
+
+# ---- background import with live progress (avoids the HTTP timeout on big replace imports) ----
+_IMPORT_JOBS: dict[str, dict] = {}        # jobId -> {total, done, deleted, created, status, error}
+
+
+@router.post("/import/start")
+async def import_start(file: UploadFile = File(...), replace: bool = False, db=Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """Kick off an ERP import in the background and return a jobId to poll. Lets the UI show a live
+    progress bar instead of a long blocking request (which times out on a full 373-order replace)."""
+    require_write(db, user)
+    data = await file.read()
+    fname = file.filename or "upload.csv"
+    uid = user.id
+    job_id = uuid.uuid4().hex[:12]
+    _IMPORT_JOBS[job_id] = {"total": 0, "done": 0, "deleted": 0, "created": 0,
+                            "status": "starting", "error": None, "replace": replace,
+                            "startedAt": datetime.utcnow().isoformat() + "Z"}
+
+    def _run():
+        s = SessionLocal()
+        try:
+            u = s.get(User, uid)
+
+            def _prog(**kw):
+                _IMPORT_JOBS[job_id].update({k: v for k, v in kw.items() if v is not None})
+
+            r = erp.commit(s, data, fname, u, replace=replace, progress=_prog)
+            _IMPORT_JOBS[job_id].update({"status": "done", "created": r["created"],
+                                         "deleted": r["deleted"], "done": _IMPORT_JOBS[job_id].get("total", 0)})
+        except Exception as e:                              # noqa: BLE001
+            try:
+                s.rollback()
+            except Exception:
+                pass
+            _IMPORT_JOBS[job_id].update({"status": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"})
+        finally:
+            s.close()
+            # Tidy old jobs so the registry can't grow unbounded.
+            if len(_IMPORT_JOBS) > 40:
+                for k in list(_IMPORT_JOBS)[:-20]:
+                    _IMPORT_JOBS.pop(k, None)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/import/progress/{job_id}")
+def import_progress(job_id: str, db=Depends(get_db), user: User = Depends(get_current_user)):
+    j = _IMPORT_JOBS.get(job_id)
+    if not j:
+        raise HTTPException(404, "Unknown or expired import job")
+    return j
 
 
 @router.post("/import/rate-card")
