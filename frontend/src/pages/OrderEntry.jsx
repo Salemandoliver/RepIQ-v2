@@ -251,7 +251,31 @@ function OrderForm({ id, meta, onClose, onSaved }) {
   const blankLine = { item: "", productId: "", contractValue: "", gm: "", cobraGm: "", quantity: 1, newRen: "new", schedule5Area: "", schedule5Check: "", btCommissionPaid: false, dateClosed: "" };
   const addLine = () => setLines([...lines, { ...blankLine }]);
   const updLine = (i, k, v) => setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
-  const pickProduct = (i, p) => setLines(lines.map((l, j) => (j === i ? { ...l, item: p.name, productId: p.id, productGroup1: p.group1, productGroup2: p.group2, schedule5Area: p.schedule5Area || l.schedule5Area } : l)));
+  // Rate Card GM % (what BT pays us) for a product → fraction. Tolerates "24", "24%", 0.24.
+  const rateFor = (productId) => {
+    const p = products.find((x) => String(x.id) === String(productId));
+    if (!p || p.rate == null || p.rate === "") return null;
+    const r = Number(String(p.rate).replace("%", "").trim());
+    if (!isFinite(r) || r <= 0) return null;
+    return r > 1 ? r / 100 : r;
+  };
+  const pickProduct = (i, p) => setLines(lines.map((l, j) => {
+    if (j !== i) return l;
+    const next = { ...l, item: p.name, productId: p.id, productGroup1: p.group1, productGroup2: p.group2, schedule5Area: p.schedule5Area || l.schedule5Area };
+    const r = rateFor(p.id);          // auto-fill GM from the rate card if the SOV is already entered
+    if (r != null && next.contractValue !== "" && !isNaN(Number(next.contractValue))) {
+      next.gm = Math.round(Number(next.contractValue) * r * 100) / 100;
+    }
+    return next;
+  }));
+  // Entering the SOV auto-calculates the GM from the product's Rate Card percentage (editable after).
+  const setContract = (i, v) => setLines(lines.map((l, j) => {
+    if (j !== i) return l;
+    const next = { ...l, contractValue: v };
+    const r = rateFor(l.productId);
+    if (r != null && v !== "" && !isNaN(Number(v))) next.gm = Math.round(Number(v) * r * 100) / 100;
+    return next;
+  }));
   const removeLine = (i) => { const l = lines[i]; if (l.id) setRemovedLines([...removedLines, l.id]); setLines(lines.filter((_, j) => j !== i)); };
   const gmTotal = lines.reduce((s, l) => s + Number(l.gm || 0), 0);
 
@@ -358,8 +382,8 @@ function OrderForm({ id, meta, onClose, onSaved }) {
       {o.orderCancelled && <Field label="Cancellation reason" w="1 1 100%"><input className="input" value={o.cancellationReason || ""} onChange={(e) => set("cancellationReason", e.target.value)} /></Field>}
 
       {/* ===== Products ===== */}
-      <div className="oe-sec">Products <span className="muted small" style={{ fontWeight: 400 }}>· order GM total {gbp(gmTotal)}</span></div>
-      <div style={{ overflowX: "auto" }}>
+      <div className="oe-sec">Products <span className="muted small" style={{ fontWeight: 400 }}>· order GM total {gbp(gmTotal)} · GM auto-fills from the Rate Card % when you enter the SOV (editable)</span></div>
+      <div>
         <table className="oe-grid">
           <thead><tr>
             <th style={{ minWidth: 240 }}>Product</th><th className="num">Contract £</th><th className="num">GM £</th>
@@ -370,7 +394,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
             {lines.map((l, i) => (
               <tr key={l.id || `n${i}`}>
                 <td><ItemPicker value={l.item} products={products} onText={(v) => updLine(i, "item", v)} onPick={(p) => pickProduct(i, p)} /></td>
-                <td><input className="input" type="number" style={{ width: 92 }} value={l.contractValue ?? ""} onChange={(e) => updLine(i, "contractValue", e.target.value)} /></td>
+                <td><input className="input" type="number" style={{ width: 92 }} value={l.contractValue ?? ""} onChange={(e) => setContract(i, e.target.value)} /></td>
                 <td><input className="input" type="number" style={{ width: 84 }} value={l.gm ?? ""} onChange={(e) => updLine(i, "gm", e.target.value)} /></td>
                 {isAdmin && <td><input className="input" type="number" style={{ width: 92, background: l.btCommissionPaid ? "color-mix(in srgb, var(--green) 8%, transparent)" : undefined }} value={l.cobraGm ?? ""} placeholder={l.btCommissionPaid ? "BT paid" : "—"} onChange={(e) => updLine(i, "cobraGm", e.target.value)} /></td>}
                 <td><input className="input" type="number" style={{ width: 52 }} value={l.quantity ?? 1} onChange={(e) => updLine(i, "quantity", e.target.value)} /></td>
@@ -392,7 +416,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
       {/* ===== Sales team ===== */}
       <div className="oe-sec">Sales team</div>
       <table className="oe-grid">
-        <thead><tr><th style={{ minWidth: 220 }}>Name</th><th>Role</th><th>Primary</th><th className="num">Contribution %</th><th></th></tr></thead>
+        <thead><tr><th style={{ minWidth: 220 }}>Name</th><th>Role</th><th>Primary</th><th className="num">Contribution %</th><th className="num">GM share £</th><th></th></tr></thead>
         <tbody>
           {agents.map((a, i) => (
             <tr key={i}>
@@ -404,10 +428,11 @@ function OrderForm({ id, meta, onClose, onSaved }) {
               <td><select className="input" value={a.salesRole || ""} onChange={(e) => updAgent(i, "salesRole", e.target.value)}>{SALES_ROLES.map((x) => <option key={x} value={x}>{x.replace(/_/g, " ")}</option>)}</select></td>
               <td style={{ textAlign: "center" }}><input type="radio" checked={!!a.isPrimary} onChange={() => setPrimary(i)} /></td>
               <td><input className="input" type="number" style={{ width: 80 }} value={a.contributionPct ?? 0} onChange={(e) => updAgent(i, "contributionPct", e.target.value)} /></td>
+              <td className="num" style={{ fontWeight: 600 }}>{gbp(gmTotal * Number(a.contributionPct || 0) / 100)}</td>
               <td>{canWrite && <a className="hr-action" style={{ color: "var(--red)", cursor: "pointer", fontWeight: 700 }} onClick={() => removeAgent(i)}>×</a>}</td>
             </tr>
           ))}
-          {agents.length === 0 && <tr><td colSpan={5} className="muted small">No sales reps on this order yet.</td></tr>}
+          {agents.length === 0 && <tr><td colSpan={6} className="muted small">No sales reps on this order yet.</td></tr>}
         </tbody>
       </table>
       {canWrite && <div className="flex" style={{ gap: 10, alignItems: "center", marginTop: 8 }}>

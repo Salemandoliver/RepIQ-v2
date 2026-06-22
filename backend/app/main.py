@@ -162,6 +162,38 @@ def _backfill_order_weeks(db):
         logging.getLogger("calliq").info("order week backfill: stamped %d order(s)", len(rows))
 
 
+def _dedup_order_lines(db):
+    """One-time cleanup: ERP split orders were imported with the SAME product line repeated once per
+    sales-team member (the GM is the full line GM on every such row), which doubled the order GM.
+    Remove duplicate lines (identical item/contract/gm/group2/schedule5/qty) within an order, keeping
+    the first, then recompute totals. Only touches orders with >1 sales agent (i.e. real splits), so
+    a single rep's genuinely-identical lines are left alone. Idempotent + safe every boot."""
+    from .modules.orders.models import Order, OrderLine
+    from .modules.orders.services import recompute_totals
+    removed = 0
+    for o in db.query(Order).filter(Order.deleted_at.is_(None)).all():
+        live_agents = [a for a in o.agents if a.deleted_at is None]
+        if len(live_agents) <= 1:
+            continue
+        seen, dupes = set(), []
+        for ln in sorted([x for x in o.lines if x.deleted_at is None], key=lambda x: x.line_no):
+            key = (ln.item_name, round(ln.contract_value or 0, 2), round(ln.gm or 0, 2),
+                   ln.product_group2, ln.schedule5_area, ln.quantity)
+            if key in seen:
+                dupes.append(ln)
+            else:
+                seen.add(key)
+        for ln in dupes:
+            db.delete(ln)
+            removed += 1
+        if dupes:
+            db.flush()
+            recompute_totals(o)
+    if removed:
+        db.commit()
+        logging.getLogger("calliq").info("order line de-dup: removed %d duplicate split line(s)", removed)
+
+
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
@@ -191,6 +223,10 @@ def startup():
             _backfill_order_weeks(db)
         except Exception:
             logging.getLogger("calliq").exception("order week backfill failed")
+        try:
+            _dedup_order_lines(db)
+        except Exception:
+            logging.getLogger("calliq").exception("order line de-dup failed")
         # Emergency access recovery: set ADMIN_RESET_PASSWORD in the environment to reset the
         # admin@btlocalbusiness.co.uk password on boot (then remove the variable again).
         _reset_pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()
