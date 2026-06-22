@@ -17,7 +17,17 @@ from .models import (ACQUISITION_STATUS, ORDER_STATUS, SCHEDULE5_CHECK, STATUS_B
                      Order, OrderAgent, OrderDispute, OrderLine, OrderProduct, OrderStatusLog)
 from .permissions import order_role, require_write, require_admin, ADMIN, OPERATIONS, MANAGER
 from .services import (agent_to_dict, find_or_create_customer, line_to_dict, next_order_number,
-                       order_to_dict, recompute_totals, set_status, stamp_financial_month)
+                       order_to_dict, recompute_totals, set_status, stamp_financial_month,
+                       stamp_week)
+
+
+def _apply_week(o: Order, body: dict, *, date_changed: bool):
+    """Auto-derive the BT week from the order date, honouring an explicit weekNumber override."""
+    if "weekNumber" in body:
+        v = str(body["weekNumber"]).strip()
+        stamp_week(o, override=int(v) if v not in ("", "None") else None)
+    elif date_changed:
+        stamp_week(o)
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
@@ -60,6 +70,13 @@ def _apply_fields(db, o: Order, body: dict):
             setattr(o, col, _pd(body[k]))
     if "adminAgentId" in body:
         o.admin_agent_id = body["adminAgentId"] or None
+    if "placed" in body:
+        was = o.placed
+        o.placed = bool(body["placed"])
+        if o.placed and not was:
+            o.placed_at = datetime.utcnow()
+        elif not o.placed:
+            o.placed_at = None
     if "companyName" in body or "leCode" in body:
         cust = find_or_create_customer(db, body.get("leCode", o.le_code),
                                        body.get("companyName", o.company_name))
@@ -91,12 +108,40 @@ def _scope_query(db, user: User, role: str):
 def meta(db=Depends(get_db), user: User = Depends(get_current_user)):
     role = order_role(db, user)
     from .categories import CATEGORIES, bt_category
+    from ...services.salesiq.fincal import (financial_week, weeks_in_financial_year, fy_months,
+                                            sales_month, current_sales_month, financial_quarter,
+                                            financial_year_start)
     products = (db.query(OrderProduct).filter(OrderProduct.deleted_at.is_(None),
                 OrderProduct.active.is_(True)).order_by(OrderProduct.name).all())
+    # People for the Sales-Team + Admin-Agent dropdowns (no free-typing → no name typos). Use the
+    # preferred/known-as name (short_name) where set, falling back to the full name.
+    people_q = db.query(User)
+    if hasattr(User, "left_on"):
+        people_q = people_q.filter(User.left_on.is_(None))
+    people = sorted(({"id": u.id, "name": (u.short_name or u.name), "fullName": u.name,
+                      "jobTitle": u.job_title} for u in people_q.all()),
+                    key=lambda p: (p["name"] or "").lower())
+    cur_week = financial_week()
+    weeks = [{"number": w["number"], "weekYear": w["week_year"], "label": w["label"],
+              "shortLabel": w["shortLabel"]} for w in weeks_in_financial_year()]
+    today = date.today()
+    cur_m = current_sales_month(today)
+    months = [{"value": f"{y:04d}-{m:02d}", "label": sales_month(y, m)["label"]}
+              for (y, m) in fy_months(today)]
+    months.reverse()                                              # newest first
+    fq = financial_quarter(today)
+    fy_year = financial_year_start(today).year
+    quarters = [{"value": f"{fy_year}-Q{n}", "label": f"Q{n} {fq['fyLabel']}"} for n in (1, 2, 3, 4)]
     return {
         "role": role, "canWrite": role in (ADMIN, OPERATIONS), "canDelete": role == ADMIN,
         "statuses": [{"code": c, "label": l, "badge": STATUS_BADGE[c]} for c, l in ORDER_STATUS.items()],
         "acquisition": ACQUISITION_STATUS, "schedule5Check": SCHEDULE5_CHECK, "categories": CATEGORIES,
+        "people": people,
+        "currentWeek": {"number": cur_week["number"], "weekYear": cur_week["week_year"],
+                        "label": cur_week["label"]},
+        "weeks": weeks, "months": months, "quarters": quarters,
+        "currentMonth": f"{cur_m['year']:04d}-{cur_m['month']:02d}",
+        "currentQuarter": f"{fy_year}-Q{fq['q']}",
         "products": [{"id": str(p.id), "name": p.name, "class": p.product_class,
                       "group1": p.product_group1, "group2": p.product_group2,
                       "schedule5Area": p.schedule5_area, "cobra": p.cobra,
@@ -105,9 +150,37 @@ def meta(db=Depends(get_db), user: User = Depends(get_current_user)):
     }
 
 
+def _period_bounds(period: str | None, week: int | None, week_year: int | None,
+                   month: str | None, quarter: str | None):
+    """(start_date, end_date) for the chosen period filter, or (None, None). period selects which of
+    the other params applies: 'week' → week+week_year; 'month' → 'YYYY-MM' sales month; 'quarter' →
+    'YYYY-Qn' BT quarter."""
+    from ...services.salesiq.fincal import (financial_week_by_number, sales_month, quarter_months,
+                                            sales_month_start)
+    p = (period or "").lower()
+    if p == "week" and week:
+        w = financial_week_by_number(int(week), int(week_year) if week_year else date.today().year)
+        return w["start"], w["end"]
+    if p == "month" and month and len(month) >= 7:
+        sm = sales_month(int(month[:4]), int(month[5:7]))
+        return sm["start"], sm["end"]
+    if p == "quarter" and quarter and "-q" in quarter.lower():
+        yr = int(quarter[:4]); qn = int(quarter.lower().split("q")[1])
+        # BT FY quarters: Q1 Apr-Jun, Q2 Jul-Sep, Q3 Oct-Dec, Q4 Jan-Mar (next cal year). yr = FY start.
+        first_cal_month = {1: 4, 2: 7, 3: 10, 4: 1}[qn]
+        ref_year = yr if qn < 4 else yr + 1
+        months = quarter_months(date(ref_year, first_cal_month, 15))
+        starts = [sales_month_start(y, m) for (y, m) in months]
+        last = sales_month(months[-1][0], months[-1][1])
+        return min(starts), last["end"]
+    return None, None
+
+
 @router.get("")
 def list_orders(status: str | None = None, q: str | None = None, le_code: str | None = None,
                 agent_id: int | None = None, date_from: str | None = None, date_to: str | None = None,
+                period: str | None = None, week: int | None = None, week_year: int | None = None,
+                month: str | None = None, quarter: str | None = None, placed: bool | None = None,
                 limit: int = 100, offset: int = 0, db=Depends(get_db),
                 user: User = Depends(get_current_user)):
     role = order_role(db, user)
@@ -123,6 +196,21 @@ def list_orders(status: str | None = None, q: str | None = None, le_code: str | 
     if agent_id:
         sub = db.query(OrderAgent.order_id).filter(OrderAgent.user_id == agent_id)
         query = query.filter(or_(Order.id.in_(sub), Order.admin_agent_id == agent_id))
+    if placed is not None:
+        query = query.filter(Order.placed.is_(bool(placed)))
+    # Period filter (week / month / quarter). A specific week can also match the stored week_number
+    # directly (so a manual week override is honoured), else fall back to the order-date range.
+    if (period or "").lower() == "week" and week:
+        wy = int(week_year) if week_year else None
+        cond = Order.week_number == int(week)
+        if wy is not None:
+            cond = (Order.week_number == int(week)) & (Order.week_year == wy)
+        ws, we = _period_bounds("week", week, week_year, None, None)
+        query = query.filter(or_(cond, (Order.order_date >= ws) & (Order.order_date <= we)))
+    else:
+        ps, pe = _period_bounds(period, week, week_year, month, quarter)
+        if ps and pe:
+            query = query.filter(Order.order_date >= ps, Order.order_date <= pe)
     if date_from:
         query = query.filter(Order.order_date >= _pd(date_from))
     if date_to:
@@ -145,6 +233,7 @@ def create_order(body: dict, request: Request, db=Depends(get_db), user: User = 
     db.add(o)
     _apply_fields(db, o, body)
     stamp_financial_month(o)
+    _apply_week(o, body, date_changed=True)
     db.flush()
     db.add(OrderStatusLog(order_id=o.id, from_status=None, to_status=o.status,
                           note="created", changed_by_id=user.id))
@@ -173,6 +262,7 @@ def update_order(oid: str, body: dict, request: Request, db=Depends(get_db), use
     _apply_fields(db, o, body)
     if "orderDate" in body:
         stamp_financial_month(o)
+    _apply_week(o, body, date_changed="orderDate" in body)
     record_audit(db, actor=user, action="UPDATE", entity_type="order", entity_id=None,
                  field="order_number", new=o.order_number, request=request)
     db.commit()

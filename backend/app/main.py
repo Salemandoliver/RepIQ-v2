@@ -79,6 +79,11 @@ def _ensure_columns():
         "ALTER TABLE call_analyses ADD COLUMN IF NOT EXISTS followups JSON",
         # Feature 8 — HeyGen completed video_url is a long signed URL; varchar(500) truncates it.
         "ALTER TABLE performance_videos ALTER COLUMN video_url TYPE TEXT",
+        # Order Entry — BT financial-year week + the "Order Placed" flag.
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS week_number INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS week_year INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS placed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS placed_at TIMESTAMP",
     ]
     from sqlalchemy import text
     # Each statement in its OWN transaction — so one failure can't abort the others (a single
@@ -142,6 +147,19 @@ def _backfill_platform_roles(db):
         log.info("platform_role/scopes backfill: updated %d user(s)", changed)
 
 
+def _backfill_order_weeks(db):
+    """One-time, idempotent: stamp the BT financial week on any order missing it (e.g. the orders
+    imported before the week_number column existed). Derived from the order date; safe every boot."""
+    from .modules.orders.models import Order
+    from .modules.orders.services import stamp_week
+    rows = db.query(Order).filter(Order.week_number.is_(None), Order.order_date.isnot(None)).all()
+    for o in rows:
+        stamp_week(o)
+    if rows:
+        db.commit()
+        logging.getLogger("calliq").info("order week backfill: stamped %d order(s)", len(rows))
+
+
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
@@ -167,6 +185,10 @@ def startup():
             seed_order_products(db)
         except Exception:
             logging.getLogger("calliq").exception("order product seed failed")
+        try:
+            _backfill_order_weeks(db)
+        except Exception:
+            logging.getLogger("calliq").exception("order week backfill failed")
         # Emergency access recovery: set ADMIN_RESET_PASSWORD in the environment to reset the
         # admin@btlocalbusiness.co.uk password on boot (then remove the variable again).
         _reset_pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()

@@ -22,7 +22,7 @@ from ...models import User
 from ...services.salesiq.fincal import financial_year_start
 from ...services.salesiq.roles import agent_matches
 from .models import ORDER_STATUS, Customer, Order, OrderAgent, OrderLine
-from .services import recompute_totals, stamp_financial_month
+from .services import recompute_totals, stamp_financial_month, stamp_week
 
 # Canonical keys → list of accepted header spellings (lower/stripped). Tolerant to NetSuite variants.
 HEADER_SYNONYMS = {
@@ -383,6 +383,7 @@ def commit(db: Session, data: bytes, filename: str, user: User, floor: date | No
                   order_cancelled=(od["status"] == "M"), source="import", import_batch=batch,
                   created_by_id=user.id)
         stamp_financial_month(o)
+        stamp_week(o)
         db.add(o)
         db.flush()
         for i, ln in enumerate(od["lines"], start=1):

@@ -12,12 +12,19 @@ const BADGE_COLOR = {
   "PARTIALLY PAID": "#8b5cf6", PAID: "var(--green)", CANCELLED: "var(--text-faint)",
   "NON-COMMISSIONABLE": "var(--text-faint)", "PAYMENT ISSUE": "var(--red)",
 };
+const ACQ_LABEL = { acquisition: "Acquisition", in_life: "In-Life", renewal: "In-Life" };
 const gbp = (n) => (n == null ? "—" : "£" + Math.round(n).toLocaleString("en-GB"));
 const dmy = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
 
 function Badge({ badge }) {
   const c = BADGE_COLOR[badge] || "var(--text-faint)";
   return <span className="siq-chip" style={{ color: c, borderColor: c, background: `color-mix(in srgb, ${c} 12%, transparent)`, fontWeight: 700, fontSize: 11 }}>{badge}</span>;
+}
+
+function Placed({ placed }) {
+  return placed
+    ? <span style={{ color: "var(--green)", fontWeight: 700 }}>Y</span>
+    : <span style={{ color: "var(--red)", fontWeight: 700 }}>N</span>;
 }
 
 function Field({ label, children, w }) {
@@ -36,6 +43,7 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
   const blank = { item: "", productId: "", contractValue: "", quantity: 1, gm: "", newRen: "new",
     schedule5Area: "", productGroup1: "", productGroup2: "", primarySplitPct: 100, secondSplitPct: 0,
     btCommissionPaid: false, schedule5Check: "" };
+  const products = meta.products || [];
 
   const save = async () => {
     const b = { ...draft };
@@ -46,11 +54,13 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
     } catch (e) { toast(e.message, "error"); }
   };
   const del = async (lid) => { try { await api.delete(`/api/v1/orders/${order.id}/lines/${lid}`); onChange(); } catch (e) { toast(e.message, "error"); } };
-  const pick = (pid) => {
-    const p = meta.products.find((x) => x.id === pid);
-    setDraft((d) => ({ ...d, productId: pid, item: p ? p.name : d.item,
-      productGroup1: p?.group1 || d.productGroup1, productGroup2: p?.group2 || d.productGroup2,
-      schedule5Area: p?.schedule5Area || d.schedule5Area }));
+
+  // Typeahead over the imported Rate Card: pick a product to auto-fill its name + BT groups/schedule5.
+  const onItem = (val) => {
+    const p = products.find((x) => (x.name || "").toLowerCase() === val.toLowerCase());
+    setDraft((d) => ({ ...d, item: val, productId: p ? p.id : "",
+      productGroup1: p?.group1 ?? d.productGroup1, productGroup2: p?.group2 ?? d.productGroup2,
+      schedule5Area: p?.schedule5Area ?? d.schedule5Area }));
   };
 
   return (
@@ -74,13 +84,16 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
       {draft && (
         <div className="siq-note" style={{ marginTop: 10 }}>
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Field label="Product" w="1 1 240px">
-              <select className="input" value={draft.productId} onChange={(e) => pick(e.target.value)}>
-                <option value="">— select / free text —</option>
-                {meta.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+            <Field label="Item — pick from Rate Card (type to search)" w="1 1 320px">
+              <input className="input" list="ratecard-items" value={draft.item}
+                placeholder="Start typing a product…" onChange={(e) => onItem(e.target.value)} />
+              <datalist id="ratecard-items">
+                {products.map((p) => <option key={p.id} value={p.name} />)}
+              </datalist>
+              <span className="muted" style={{ fontSize: 11 }}>
+                {draft.productId ? "✓ matched a Rate Card product" : "free text (not on the Rate Card)"}
+              </span>
             </Field>
-            <Field label="Item name" w="1 1 240px"><input className="input" value={draft.item} onChange={(e) => setDraft({ ...draft, item: e.target.value })} /></Field>
             <Field label="Contract value (£)"><input className="input" type="number" value={draft.contractValue} onChange={(e) => setDraft({ ...draft, contractValue: e.target.value })} /></Field>
             <Field label="GM (£)"><input className="input" type="number" value={draft.gm} onChange={(e) => setDraft({ ...draft, gm: e.target.value })} /></Field>
             <Field label="Qty" w="0 0 70px"><input className="input" type="number" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: e.target.value })} /></Field>
@@ -107,15 +120,23 @@ function ItemsTab({ order, meta, canWrite, onChange }) {
 }
 
 // ---------------------------------------------------------------- sales team tab
-function AgentsTab({ order, canWrite, onChange }) {
+function AgentsTab({ order, meta, canWrite, onChange }) {
   const toast = useToast();
   const [rows, setRows] = useState(() => (order.agents || []).map((a) => ({ ...a })));
-  const add = () => setRows([...rows, { name: "", salesRole: "first_sales_rep", isPrimary: rows.length === 0, contributionPct: 0 }]);
+  const people = meta.people || [];
+  const add = () => setRows([...rows, { name: "", userId: null, salesRole: "first_sales_rep", isPrimary: rows.length === 0, contributionPct: 0 }]);
   const save = async () => {
     try { await api.put(`/api/v1/orders/${order.id}/agents`, { agents: rows }); onChange(); toast("Sales team saved", "success"); }
     catch (e) { toast(e.message, "error"); }
   };
   const upd = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  // Pick a person from the dropdown — no free-typing, so no name typos. Stores the user id + the
+  // preferred name (e.g. Kunle, Patrick).
+  const pickPerson = (i, uid) => {
+    if (String(uid).startsWith("__keep_")) return;           // keep the imported name as-is
+    const p = people.find((x) => String(x.id) === String(uid));
+    setRows(rows.map((r, j) => (j === i ? { ...r, userId: p ? p.id : null, name: p ? p.name : "" } : r)));
+  };
   return (
     <div>
       <table className="data siq-perf" style={{ width: "100%" }}>
@@ -123,7 +144,13 @@ function AgentsTab({ order, canWrite, onChange }) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
-              <td>{canWrite ? <input className="input" value={r.name} onChange={(e) => upd(i, "name", e.target.value)} /> : r.name}</td>
+              <td>{canWrite
+                ? <select className="input" value={r.userId || (r.name ? `__keep_${r.name}` : "")} onChange={(e) => pickPerson(i, e.target.value)}>
+                    <option value="">— select name —</option>
+                    {!r.userId && r.name && <option value={`__keep_${r.name}`}>{r.name} (from import)</option>}
+                    {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                : r.name}</td>
               <td>{canWrite ? <select className="input" value={r.salesRole || ""} onChange={(e) => upd(i, "salesRole", e.target.value)}>
                 {["first_sales_rep", "second_sales_rep", "closer", "admin_agent", "agent"].map((x) => <option key={x} value={x}>{x.replace(/_/g, " ")}</option>)}
               </select> : r.salesRole}</td>
@@ -152,7 +179,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
   const isNew = id === "new";
 
   const load = () => {
-    if (isNew) { setO({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", lines: [], agents: [] }); return; }
+    if (isNew) { setO({ status: "O", orderDate: new Date().toISOString().slice(0, 10), leAcquisitionStatus: "acquisition", placed: false, lines: [], agents: [] }); return; }
     api.get(`/api/v1/orders/${id}`).then(setO).catch((e) => toast(e.message, "error"));
   };
   useEffect(load, [id]);
@@ -165,6 +192,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
       volReference: o.volReference, orderNotes: o.orderNotes, status: o.status,
       commissionCrqRef: o.commissionCrqRef, reportingCrqRef: o.reportingCrqRef,
       orderCancelled: o.orderCancelled, cancellationReason: o.cancellationReason,
+      placed: !!o.placed, weekNumber: o.weekNumber,
     };
     try {
       if (isNew) { const created = await api.post("/api/v1/orders", body); setO(created); onSaved(); toast(`Order ${created.orderNumber} created`, "success"); }
@@ -182,12 +210,15 @@ function OrderForm({ id, meta, onClose, onSaved }) {
 
   return (
     <Modal wide title={title} onClose={onClose}>
-      {!isNew && <div className="flex" style={{ gap: 10, alignItems: "center", marginBottom: 10 }}>
+      {!isNew && <div className="flex" style={{ gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
         <Badge badge={o.badge} />
         {canWrite && <select className="input" style={{ width: 240 }} value={o.status} onChange={(e) => changeStatus(e.target.value)}>
           {meta.statuses.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
         </select>}
-        <span className="muted small">Total {gbp(o.total)} · {o.financialMonth ? `FY month ${dmy(o.financialMonth)}` : ""}{o.locked ? " · 🔒 locked" : ""}</span>
+        <span className="siq-chip" style={{ fontWeight: 700, color: o.placed ? "var(--green)" : "var(--red)", borderColor: o.placed ? "var(--green)" : "var(--red)" }}>
+          {o.placed ? "PLACED" : "NOT PLACED"}
+        </span>
+        <span className="muted small">Total {gbp(o.total)} · {o.weekLabel || ""}{o.locked ? " · 🔒 locked" : ""}</span>
       </div>}
       {!isNew && o.categories && <div className="muted small" style={{ marginBottom: 10 }}>
         BT targeting split — Data {gbp(o.categories.Data)} · Cloud {gbp(o.categories.Cloud)} · Mobile {gbp(o.categories.Mobile)}
@@ -199,11 +230,29 @@ function OrderForm({ id, meta, onClose, onSaved }) {
 
       {tab === "summary" && (
         <div>
+          {/* Order Placed — the key operational flag (mirrors the Sales Tracker's "Order Placed?"). */}
+          {canWrite && (
+            <label className="flex" style={{ gap: 8, alignItems: "center", marginBottom: 12, padding: "8px 12px",
+              border: "1px solid var(--border)", borderRadius: 8, background: o.placed ? "color-mix(in srgb, var(--green) 8%, transparent)" : "color-mix(in srgb, var(--red) 6%, transparent)" }}>
+              <input type="checkbox" checked={!!o.placed} onChange={(e) => set("placed", e.target.checked)} />
+              <span style={{ fontWeight: 700 }}>Order Placed in BT systems</span>
+              <span className="muted small">— tick once it's been placed; leave unticked if details are missing or it's waiting on something.</span>
+            </label>
+          )}
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
             <Field label="Order date"><GBDate value={o.orderDate} onChange={(v) => set("orderDate", v)} /></Field>
+            <Field label="Week #" w="0 0 130px">
+              <input className="input" type="number" value={o.weekNumber ?? ""} placeholder="auto"
+                onChange={(e) => set("weekNumber", e.target.value)} />
+              <span className="muted" style={{ fontSize: 11 }}>{o.weekLabel || "auto from order date"}</span>
+            </Field>
             <Field label="Company name" w="1 1 240px"><input className="input" value={o.companyName || ""} onChange={(e) => set("companyName", e.target.value)} /></Field>
             <Field label="LE code"><input className="input" value={o.leCode || ""} onChange={(e) => set("leCode", e.target.value)} /></Field>
-            <Field label="Acquisition"><select className="input" value={o.leAcquisitionStatus || "acquisition"} onChange={(e) => set("leAcquisitionStatus", e.target.value)}>{(meta.acquisition || []).map((a) => <option key={a} value={a}>{a}</option>)}</select></Field>
+            <Field label="LE acquisition status">
+              <select className="input" value={o.leAcquisitionStatus || "acquisition"} onChange={(e) => set("leAcquisitionStatus", e.target.value)}>
+                {(meta.acquisition || []).map((a) => <option key={a} value={a}>{ACQ_LABEL[a] || a}</option>)}
+              </select>
+            </Field>
           </div>
           <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
             <Field label="OPP ID"><input className="input" value={o.oppId || ""} onChange={(e) => set("oppId", e.target.value)} /></Field>
@@ -223,7 +272,7 @@ function OrderForm({ id, meta, onClose, onSaved }) {
         </div>
       )}
       {tab === "items" && <ItemsTab order={o} meta={meta} canWrite={canWrite && !o.locked} onChange={load} />}
-      {tab === "team" && <AgentsTab order={o} canWrite={canWrite && !o.locked} onChange={load} />}
+      {tab === "team" && <AgentsTab order={o} meta={meta} canWrite={canWrite && !o.locked} onChange={load} />}
     </Modal>
   );
 }
@@ -276,7 +325,10 @@ export default function OrderEntry() {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(null);     // order id | "new"
+  const [period, setPeriod] = useState("month");   // all | week | month | quarter
+  const [periodVal, setPeriodVal] = useState("");  // week "num:weekYear" · month "YYYY-MM" · quarter "YYYY-Qn"
+  const [placedF, setPlacedF] = useState("");      // "" | "true" | "false"
+  const [open, setOpen] = useState(null);          // order id | "new"
   const [importing, setImporting] = useState(false);
   const [reload, setReload] = useState(0);
   const [sort, setSort] = useState({ key: "orderDate", dir: "desc" });
@@ -287,7 +339,7 @@ export default function OrderEntry() {
     const { key, dir } = sort;
     rows.sort((a, b) => {
       let av = a[key], bv = b[key];
-      if (key === "total") { av = av ?? 0; bv = bv ?? 0; }
+      if (key === "total" || key === "weekNumber") { av = av ?? 0; bv = bv ?? 0; }
       else { av = (av ?? "").toString().toLowerCase(); bv = (bv ?? "").toString().toLowerCase(); }
       if (av < bv) return dir === "asc" ? -1 : 1;
       if (av > bv) return dir === "asc" ? 1 : -1;
@@ -297,14 +349,43 @@ export default function OrderEntry() {
   }, [data, sort]);
   const toggleSort = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
 
-  useEffect(() => { api.get("/api/v1/orders/meta").then(setMeta).catch(() => setMeta({ canWrite: false, statuses: [], products: [] })); }, []);
+  // Load meta, then default the list to the CURRENT sales month.
   useEffect(() => {
+    api.get("/api/v1/orders/meta").then((m) => {
+      setMeta(m);
+      setPeriodVal(m.currentMonth || "");
+    }).catch(() => setMeta({ canWrite: false, statuses: [], products: [], people: [], weeks: [], months: [], quarters: [] }));
+  }, []);
+
+  useEffect(() => {
+    if (!meta) return;
     setData(null);
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (q) params.set("q", q);
+    if (placedF) params.set("placed", placedF);
+    if (period !== "all" && periodVal) {
+      params.set("period", period);
+      if (period === "week") {
+        const [num, wy] = periodVal.split(":");
+        params.set("week", num); if (wy) params.set("week_year", wy);
+      } else if (period === "month") { params.set("month", periodVal); }
+      else if (period === "quarter") { params.set("quarter", periodVal); }
+    }
+    params.set("limit", "500");
     api.get(`/api/v1/orders?${params}`).then(setData).catch((e) => { toast(e.message, "error"); setData({ orders: [] }); });
-  }, [status, q, reload]);
+  }, [status, q, period, periodVal, placedF, reload, meta]);
+
+  // When switching the period TYPE, default its value sensibly.
+  const changePeriod = (p) => {
+    setPeriod(p);
+    if (p === "month") setPeriodVal(meta?.currentMonth || "");
+    else if (p === "quarter") setPeriodVal(meta?.currentQuarter || (meta?.quarters?.[0]?.value || ""));
+    else if (p === "week") {
+      const cw = meta?.currentWeek;
+      setPeriodVal(cw ? `${cw.number}:${cw.weekYear}` : (meta?.weeks?.[0] ? `${meta.weeks[0].number}:${meta.weeks[0].weekYear}` : ""));
+    } else setPeriodVal("");
+  };
 
   const download = async (path, name) => {
     try { const url = await fetchBlobUrl(`/api/v1/orders/report/${path}`); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); }
@@ -343,23 +424,50 @@ export default function OrderEntry() {
         </div>
       </div>
 
-      <div className="flex" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <input className="input" placeholder="Search company / SO# / OPP / main order…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: "1 1 280px" }} />
-        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 220 }}>
+      <div className="flex" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="input" placeholder="Search company / SO# / OPP / main order…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: "1 1 240px" }} />
+        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 180 }}>
           <option value="">All statuses</option>
           {(meta?.statuses || []).map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+        </select>
+        {/* Period filter — view a specific BT week, sales month, or quarter (defaults to this month). */}
+        <select className="input" value={period} onChange={(e) => changePeriod(e.target.value)} style={{ width: 120 }}>
+          <option value="week">By week</option>
+          <option value="month">By month</option>
+          <option value="quarter">By quarter</option>
+          <option value="all">All time</option>
+        </select>
+        {period === "week" && (
+          <select className="input" value={periodVal} onChange={(e) => setPeriodVal(e.target.value)} style={{ width: 210 }}>
+            {(meta?.weeks || []).map((w) => <option key={`${w.number}:${w.weekYear}`} value={`${w.number}:${w.weekYear}`}>{w.label}</option>)}
+          </select>
+        )}
+        {period === "month" && (
+          <select className="input" value={periodVal} onChange={(e) => setPeriodVal(e.target.value)} style={{ width: 160 }}>
+            {(meta?.months || []).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        )}
+        {period === "quarter" && (
+          <select className="input" value={periodVal} onChange={(e) => setPeriodVal(e.target.value)} style={{ width: 140 }}>
+            {(meta?.quarters || []).map((qq) => <option key={qq.value} value={qq.value}>{qq.label}</option>)}
+          </select>
+        )}
+        <select className="input" value={placedF} onChange={(e) => setPlacedF(e.target.value)} style={{ width: 150 }}>
+          <option value="">Placed: all</option>
+          <option value="true">Placed only</option>
+          <option value="false">Not placed</option>
         </select>
       </div>
 
       {!data ? <Skeleton h={300} /> : data.orders.length === 0 ? (
-        <EmptyState icon="📦" title="No orders" sub={meta?.canWrite ? "Create one, or import the ERP dump." : "Orders you're on will appear here."} />
+        <EmptyState icon="📦" title="No orders for this view" sub={meta?.canWrite ? "Try a different week/month, or create / import an order." : "Orders you're on will appear here."} />
       ) : (
         <div className="card" style={{ overflowX: "auto" }}>
           <table className="data" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {[["orderNumber", "SO#"], ["orderDate", "Date"], ["companyName", "Company"],
-                  ["leCode", "LE"], ["oppId", "OPP ID"], ["status", "Status"], ["total", "Total", true]]
+                {[["orderNumber", "SO#"], ["orderDate", "Date"], ["weekNumber", "Wk"], ["companyName", "Company"],
+                  ["leCode", "LE"], ["oppId", "OPP ID"], ["placed", "Placed"], ["status", "Status"], ["total", "Total", true]]
                   .map(([key, label, right]) => (
                     <th key={key} onClick={() => toggleSort(key)}
                       style={{ cursor: "pointer", textAlign: right ? "right" : "left", whiteSpace: "nowrap",
@@ -374,9 +482,11 @@ export default function OrderEntry() {
                 <tr key={o.id} style={{ cursor: "pointer", borderTop: "1px solid var(--border)" }} onClick={() => setOpen(o.id)}>
                   <td style={{ padding: "8px 10px" }}><b>{o.orderNumber}</b></td>
                   <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{dmy(o.orderDate)}</td>
+                  <td style={{ padding: "8px 10px" }} className="muted" title={o.weekLabel || ""}>{o.weekNumber ?? "—"}</td>
                   <td style={{ padding: "8px 10px" }}>{o.companyName}</td>
                   <td style={{ padding: "8px 10px" }} className="muted">{o.leCode || "—"}</td>
                   <td style={{ padding: "8px 10px" }} className="muted">{o.oppId || "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "center" }}><Placed placed={o.placed} /></td>
                   <td style={{ padding: "8px 10px" }}><Badge badge={o.badge} /></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{gbp(o.total)}</td>
                 </tr>

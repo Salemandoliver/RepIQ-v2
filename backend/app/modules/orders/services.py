@@ -9,7 +9,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...models import User
-from ...services.salesiq.fincal import financial_month_key
+from ...services.salesiq.fincal import (financial_month_key, financial_week,
+                                        financial_week_by_number)
 from .models import (ORDER_STATUS, STATUS_BADGE, Customer, Order, OrderAgent, OrderLine,
                      OrderStatusLog)
 
@@ -58,6 +59,28 @@ def recompute_totals(order: Order) -> None:
 def stamp_financial_month(order: Order) -> None:
     if order.order_date:
         order.financial_month = financial_month_key(order.order_date)
+
+
+def stamp_week(order: Order, override: int | None = None) -> None:
+    """Set the BT financial-year week. Auto-derived from the order date, but an operator can pass an
+    explicit ``override`` number (kept against the order date's financial year)."""
+    fy_year = financial_week(order.order_date)["week_year"] if order.order_date else None
+    if override is not None and str(override) != "":
+        order.week_number = int(override)
+        order.week_year = fy_year
+    elif order.order_date:
+        fw = financial_week(order.order_date)
+        order.week_number = fw["number"]
+        order.week_year = fw["week_year"]
+
+
+def week_label(order: Order) -> str | None:
+    """Human label for an order's week (uses the stored number so a manual override is respected)."""
+    if order.week_number and order.week_year:
+        return financial_week_by_number(order.week_number, order.week_year)["label"]
+    if order.order_date:
+        return financial_week(order.order_date)["label"]
+    return None
 
 
 def set_status(db: Session, order: Order, new_status: str, user: User | None,
@@ -114,6 +137,8 @@ def order_to_dict(db: Session, o: Order, *, full: bool = False) -> dict:
         "id": str(o.id), "orderNumber": o.order_number,
         "orderDate": o.order_date.isoformat() if o.order_date else None,
         "financialMonth": o.financial_month.isoformat() if o.financial_month else None,
+        "weekNumber": o.week_number, "weekYear": o.week_year, "weekLabel": week_label(o),
+        "placed": o.placed, "placedAt": o.placed_at.isoformat() if o.placed_at else None,
         "leCode": o.le_code, "companyName": o.company_name,
         "leAcquisitionStatus": o.le_acquisition_status,
         "status": o.status, "statusLabel": ORDER_STATUS.get(o.status, o.status),

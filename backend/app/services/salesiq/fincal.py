@@ -126,6 +126,49 @@ def financial_year_label(d: date | None = None) -> str:
     return financial_quarter(d or date.today())["fyLabel"]
 
 
+def financial_week(d: date | None = None) -> dict:
+    """BT financial-year week containing ``d``. Week 1 = the week starting on the financial-year
+    start Monday (Mon 30 Mar 2026 for FY27); weeks run Mon–Sun and count up 1, 2, 3…. BT publishes
+    Schedule 5 each Monday for the *previous* week, so this is the key Operations reconcile against.
+    Returns number, the FY-start year (week_year), the Mon–Sun start/end, and a friendly label."""
+    d = d or date.today()
+    fy_start = financial_year_start(d)                      # a Monday (FY start)
+    week_monday = d - timedelta(days=d.weekday())           # Monday of d's own week
+    number = (week_monday - fy_start).days // 7 + 1
+    start, end = week_monday, week_monday + timedelta(days=6)
+    return {
+        "number": number, "week_year": fy_start.year, "fyStart": fy_start,
+        "start": start, "end": end, "fyLabel": financial_year_label(d),
+        "label": f"Wk {number} · {start.strftime('%d %b')}–{end.strftime('%d %b')}",
+        "shortLabel": f"Wk {number}",
+    }
+
+
+def financial_week_number(d: date | None = None) -> int:
+    return financial_week(d)["number"]
+
+
+def financial_week_by_number(number: int, week_year: int) -> dict:
+    """Inverse of :func:`financial_week` — the week's Mon–Sun bounds for a given FY-start year."""
+    fy_start = financial_year_start(date(week_year, 6, 1))   # any mid-FY date in that FY
+    week_monday = fy_start + timedelta(days=(number - 1) * 7)
+    start, end = week_monday, week_monday + timedelta(days=6)
+    return {"number": number, "week_year": fy_start.year, "start": start, "end": end,
+            "label": f"Wk {number} · {start.strftime('%d %b')}–{end.strftime('%d %b')}",
+            "shortLabel": f"Wk {number}"}
+
+
+def weeks_in_financial_year(d: date | None = None) -> list[dict]:
+    """Every BT week from the FY start up to (and including) the week containing today/``d`` —
+    newest first. Drives the Order Entry week filter."""
+    d = d or date.today()
+    cur = financial_week(d)
+    out = []
+    for n in range(cur["number"], 0, -1):
+        out.append(financial_week_by_number(n, cur["week_year"]))
+    return out
+
+
 def period_bounds(d: date | None = None, period: str = "mtd") -> dict:
     """Start/end dates + a human label for a dashboard period."""
     d = d or date.today()

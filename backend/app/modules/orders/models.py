@@ -36,7 +36,9 @@ STATUS_BADGE = {
 # Statuses that are "open" (commission still expected) vs terminal.
 TERMINAL_STATUSES = {"L", "M", "N"}
 CANCELLED_STATUSES = {"M"}
-ACQUISITION_STATUS = ["acquisition", "renewal"]
+# LE acquisition status: a brand-new customer (acquisition) vs an existing customer who's bought
+# from us before (in_life).
+ACQUISITION_STATUS = ["acquisition", "in_life"]
 SCHEDULE5_CHECK = ["on_correct", "on_incorrect", "not_on"]   # On S5 correct / incorrect / not on S5
 
 
@@ -70,6 +72,15 @@ class Order(DomainBase, Base):
     order_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)   # e.g. SO8358
     order_date: Mapped[date] = mapped_column(Date, index=True)
     financial_month: Mapped[date | None] = mapped_column(Date, index=True, nullable=True)  # BT sales-month key
+    # BT financial-year week (auto from order_date, but operator-editable). week_year = FY-start year.
+    # Operations reconcile a week's orders against BT's Monday Schedule 5, so this is filterable.
+    week_number: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    week_year: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+
+    # "Order Placed" = it's been entered into the BT systems (like the Sales Tracker's Placed? flag).
+    # An un-placed order may have missing details or be waiting on something before it can be placed.
+    placed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    placed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     customer_id: Mapped[str | None] = mapped_column(ForeignKey("order_customers.id"), nullable=True)
     le_code: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
