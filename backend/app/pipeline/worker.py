@@ -343,6 +343,24 @@ def maybe_weekly_videos(db) -> None:
         db.add(Setting(key="video_batch_week", value={"week": wk}))
     db.commit()
 
+    # On the FIRST Monday of the BT sales month, also pre-generate the intelligent monthly review
+    # (and the quarterly review at quarter start) so they're ready before 8:30am. Idempotent.
+    try:
+        from ..services.intelligence.videos import is_first_monday_of_sales_month, generate_all_reviews
+        today = date.today()
+        if is_first_monday_of_sales_month(today):
+            mkey = today.isoformat()
+            mrow = db.get(Setting, "review_batch_month")
+            if not (mrow and isinstance(mrow.value, dict) and mrow.value.get("month") == mkey):
+                generate_all_reviews(db, today)
+                if mrow:
+                    mrow.value = {"month": mkey}
+                else:
+                    db.add(Setting(key="review_batch_month", value={"month": mkey}))
+                db.commit()
+    except Exception:
+        log.exception("Monthly/quarterly review pre-generation failed")
+
 
 # Transient states a call passes through while a worker thread owns it. If the process
 # restarts mid-flight, these are re-queued on startup so no call is left stranded.

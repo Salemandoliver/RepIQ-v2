@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Avatar, Spinner, EmptyState, Modal } from "../components/ui.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
+import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamLeague from "../components/TeamLeague.jsx";
 import CampaignAlerts from "../components/CampaignAlerts.jsx";
 import { InsightsFeed } from "../components/Insights.jsx";
@@ -18,13 +19,13 @@ function WeeklyVideoPicker() {
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="flex" style={{ gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <span aria-hidden="true">🎬</span>
-        <span style={{ fontWeight: 700, fontSize: 15 }}>Weekly performance videos</span>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>Performance videos</span>
         <select className="input" value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "auto", marginLeft: "auto" }} aria-label="Choose a rep or BC">
           <option value="">Choose a rep / BC…</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}{p.role === "bc" ? " (BC)" : ""}</option>)}
         </select>
       </div>
-      {sel ? <WeeklyVideo userId={Number(sel)} /> : <div className="muted small">Pick a rep or BC to watch their weekly performance video.</div>}
+      {sel ? <><ReviewVideo userId={Number(sel)} /><WeeklyVideo userId={Number(sel)} /></> : <div className="muted small">Pick a rep or BC to watch their weekly video and monthly/quarterly review.</div>}
     </div>
   );
 }
@@ -126,7 +127,20 @@ export default function CommandCentre() {
   const { data, loading, refresh } = useCachedGet("/api/intelligence/team");
   const [sort, setSort] = useState("achievementPct");
   const [drill, setDrill] = useState(null);
+  const [hl, setHl] = useState({});         // local override of deal highlight state, by dealKey
   const load = refresh;
+
+  const toggleDeal = async (d) => {
+    const cur = hl[d.dealKey]?.actioned ?? d.actioned;
+    const next = !cur;
+    setHl((m) => ({ ...m, [d.dealKey]: { actioned: next, actionedBy: next ? "You" : null } }));
+    try {
+      const r = await api.post("/api/intelligence/deals/highlight", { dealKey: d.dealKey, company: d.company, rep: d.rep, actioned: next });
+      setHl((m) => ({ ...m, [d.dealKey]: { actioned: r.actioned, actionedBy: r.actionedBy } }));
+    } catch (e) {
+      setHl((m) => ({ ...m, [d.dealKey]: { actioned: cur, actionedBy: d.actionedBy } }));   // revert
+    }
+  };
 
   const reps = useMemo(() => {
     if (!data) return [];
@@ -191,14 +205,29 @@ export default function CommandCentre() {
           </div>
           {data.deals.map((d, i) => {
             const t = DEAL_TAG[d.tag] || DEAL_TAG["Warm"];
+            const arrow = d.momentum === "up" ? { c: "var(--green)", g: "↑", t: "heating up" }
+              : d.momentum === "down" ? { c: "var(--red)", g: "↓", t: "going cold" }
+              : { c: "var(--text-faint)", g: "→", t: "steady" };
+            const actioned = hl[d.dealKey]?.actioned ?? d.actioned;
+            const actionedBy = hl[d.dealKey]?.actionedBy ?? d.actionedBy;
             return (
-              <div key={i} className="flex" style={{ gap: 11, alignItems: "flex-start", padding: "11px 0", borderTop: i ? "1px solid var(--border)" : "none" }}>
+              <div key={i} className="flex" style={{ gap: 11, alignItems: "flex-start", padding: "11px 0", borderTop: i ? "1px solid var(--border)" : "none", background: actioned ? "color-mix(in srgb, var(--green) 5%, transparent)" : undefined }}>
                 <span className="small" style={{ fontWeight: 600, padding: "3px 9px", borderRadius: 8, whiteSpace: "nowrap", background: t.bg, color: t.color }}>{d.tag}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14 }}><strong>{d.company}</strong> — {d.rep}{d.ageDays > 0 ? ` · ${d.ageDays}d ago` : ""}</div>
+                  <div style={{ fontSize: 14 }}>
+                    <span title={`Momentum: ${arrow.t}`} style={{ color: arrow.c, fontWeight: 700, marginRight: 5 }}>{arrow.g}</span>
+                    <strong>{d.company}</strong> — {d.rep}{d.ageDays > 0 ? ` · ${d.ageDays}d ago` : ""}
+                  </div>
                   <div className="muted small" style={{ marginTop: 3, lineHeight: 1.5 }}>{d.action}{d.proposal ? `: ${d.proposal}` : ""}</div>
+                  {actioned && <div className="small" style={{ marginTop: 4, color: "var(--green)", fontWeight: 600 }}>✓ Being actioned{actionedBy ? ` — ${actionedBy}` : ""}</div>}
                 </div>
-                <Link to={`/calls/${d.callId}`} className="btn btn-outline btn-sm" style={{ flexShrink: 0 }}>Open</Link>
+                <div className="flex" style={{ gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button className={`btn btn-sm ${actioned ? "btn-primary" : "btn-outline"}`} onClick={() => toggleDeal(d)}
+                    title={actioned ? "Un-highlight (no longer being actioned)" : "Mark as being actioned (shared with all managers)"}>
+                    {actioned ? "✓ Actioning" : "Highlight"}
+                  </button>
+                  <Link to={`/calls/${d.callId}`} className="btn btn-outline btn-sm">Open</Link>
+                </div>
               </div>
             );
           })}

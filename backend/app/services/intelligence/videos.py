@@ -76,6 +76,140 @@ def weekly_payload(db, user: User, role: str) -> dict:
     }
 
 
+# ======================================================================================
+# Monthly / quarterly performance REVIEW (Type 3). A deeper, intelligent look-back generated
+# on the first Monday of each BT sales month (and a quarterly one at quarter start). Presented
+# by Gary (the sales director's HeyGen avatar). Covers the period that just ENDED.
+# ======================================================================================
+def is_first_monday_of_sales_month(asof: date) -> bool:
+    """True when ``asof`` is the BT sales-month start (which is always a Monday = the first
+    Monday of that sales month)."""
+    from ..salesiq import fincal
+    return asof == fincal.current_sales_month(asof)["start"]
+
+
+def _sales_month_before(sm: dict):
+    from ..salesiq import fincal
+    return fincal.current_sales_month(sm["start"] - timedelta(days=1))
+
+
+def _month_metrics(db, user: User, role: str, sm: dict) -> dict:
+    """Call activity + SOV/leads achievement for one finished sales month."""
+    from ..salesiq.dashboard import bc_dashboard, rep_dashboard
+    start = datetime.combine(sm["start"], time.min)
+    end = datetime.combine(sm["end"] + timedelta(days=1), time.min)
+    rows = load_call_metrics(db, user.id, start, end)
+    agg = averages(rows)
+    mkey = f"{sm['year']:04d}-{sm['month']:02d}"
+    perf = {}
+    try:
+        perf = (bc_dashboard(db, user, month=mkey) if role == "bc"
+                else rep_dashboard(db, user, role=role, month=mkey)).get("performance", {})
+    except Exception:
+        log.exception("review dashboard fetch failed for %s %s", user.id, mkey)
+    return {"label": sm["label"], "calls": agg["calls"], "quality": agg["quality"],
+            "talkRatio": agg["talk_ratio"], "questions": agg["questions"],
+            "orders": agg["orders"], "perf": perf, "_ids": [r["id"] for r in rows]}
+
+
+def review_payload(db, user: User, role: str, asof: date, period: str) -> dict:
+    """Compile the just-ended month (or quarter) for the intelligent review script."""
+    from collections import Counter
+    from ..salesiq import fincal
+    cur = fincal.current_sales_month(asof)
+    prior = _sales_month_before(cur)               # the month that just ended
+    if period == "quarter":
+        sms = [prior]
+        p = prior
+        for _ in range(2):
+            p = _sales_month_before(p)
+            sms.insert(0, p)
+        period_label = fincal.financial_quarter(date(prior["year"], prior["month"], 15))["label"]
+        before = None
+    else:
+        sms = [prior]
+        period_label = prior["label"]
+        before = _month_metrics(db, user, role, _sales_month_before(prior))
+    months = [_month_metrics(db, user, role, sm) for sm in sms]
+
+    ids = [i for m in months for i in m["_ids"]]
+    strengths, focus, one_things = [], [], []
+    if ids:
+        for c in db.query(Call).filter(Call.id.in_(ids)).all():
+            if c.analysis:
+                strengths += (c.analysis.strengths or [])
+                focus += (c.analysis.improvements or [])
+                if c.analysis.one_thing:
+                    one_things.append(c.analysis.one_thing)
+    top_strength = Counter(strengths).most_common(2)
+    top_focus = Counter(focus).most_common(2)
+
+    total_calls = sum(m["calls"] or 0 for m in months)
+    total_orders = sum(m["orders"] or 0 for m in months)
+    sov = sum((m["perf"].get("sovMTD") or 0) for m in months)
+    sov_target = sum((m["perf"].get("sovTarget") or 0) for m in months)
+    last_perf = months[-1]["perf"]
+    return {
+        "period": period, "periodLabel": period_label,
+        "monthly": [{"label": m["label"], "calls": m["calls"], "quality": m["quality"],
+                     "orders": m["orders"], "talkRatio": m["talkRatio"], "questions": m["questions"],
+                     "sov": m["perf"].get("sovMTD"), "sovPct": m["perf"].get("sovPct"),
+                     "leads": m["perf"].get("leadsMTD"), "gm": m["perf"].get("gmGenerated")}
+                    for m in months],
+        "totals": {"calls": total_calls, "orders": total_orders, "sov": round(sov),
+                   "sovTarget": round(sov_target),
+                   "sovPct": round(100 * sov / sov_target) if sov_target else None,
+                   "leads": sum((m["perf"].get("leadsMTD") or 0) for m in months) if role == "bc" else None,
+                   "gm": round(sum((m["perf"].get("gmGenerated") or 0) for m in months)) if role == "bc" else None,
+                   "avgQuality": months[-1]["quality"]},
+        "priorMonth": ({"calls": before["calls"], "quality": before["quality"], "orders": before["orders"]}
+                       if before else None),
+        "topStrengths": [s for s, _ in top_strength],
+        "topFocus": [f for f, _ in top_focus],
+        "coachingPoints": one_things[:3],
+        "predictor": (last_perf.get("predictor") or {}),
+    }
+
+
+def _review_script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
+    name = (user.name or "there").split()[0]
+    period = "quarter" if p.get("period") == "quarter" else "month"
+    t = p.get("totals") or {}
+    months = p.get("monthly") or []
+    trend = " → ".join(f"{m['label'].split()[0]}: q{m.get('quality')}, {m.get('orders')} orders"
+                       for m in months)
+    if role == "bc":
+        ach = f"Leads: {t.get('leads')}; GM generated £{t.get('gm')}; {t.get('calls')} conversations."
+    else:
+        ach = (f"SOV £{t.get('sov'):,} of £{t.get('sovTarget'):,} target ({t.get('sovPct')}%); "
+               f"{t.get('orders')} orders; {t.get('calls')} conversations; avg quality {t.get('avgQuality')}.")
+    data = (
+        f"Rep: {user.name} ({role}). Reviewing the {period} just ended: {p.get('periodLabel')}.\n"
+        f"ACHIEVEMENT: {ach}\n"
+        f"MONTH-BY-MONTH: {trend}\n"
+        f"PRIOR MONTH (for trajectory): {p.get('priorMonth')}\n"
+        f"RECURRING STRENGTHS: {', '.join(p.get('topStrengths') or []) or 'n/a'}\n"
+        f"RECURRING FOCUS AREAS: {', '.join(p.get('topFocus') or []) or 'n/a'}\n"
+        f"COACHING THEMES: {', '.join(p.get('coachingPoints') or []) or 'n/a'}\n"
+        f"PROJECTION: {p.get('predictor')}"
+    )
+    system = (
+        "You are Gary, sales director at BT Local Business Oxford & Bucks (UK telecom), recording a "
+        f"personal {period.upper()} performance REVIEW video for ONE rep. This is NOT a stats readout "
+        "— the rep already knows their numbers. Be genuinely insightful: identify the ONE pattern or "
+        "trajectory that matters most across the period, explain what's driving it, and give the single "
+        "strategic shift that would change their next " + period + ". Use at most two numbers, only as "
+        "evidence — never list figures. Tone: warm, direct, respectful — a sharp director who has "
+        "studied their period and believes in them. Never punishing. UK English, second person. "
+        "~120–170 words. Structure: greet by first name; the headline pattern (insight, not a number); "
+        "why it's happening; the ONE thing to change; a motivating, forward-looking close into the new "
+        + period + ". Only use the data given — invent nothing. "
+        "Return STRICT JSON: {\"title\":\"...\",\"headline\":\"one-line summary\",\"script\":\"the spoken script\"}."
+    )
+    user_msg = f"Write {name}'s {period} review script from this data:\n\n{data}"
+    return system, user_msg
+
+
 def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
     name = (user.name or "there").split()[0]
     m = p.get("monthly") or {}
@@ -124,9 +258,9 @@ def _validate(script: str, user: User) -> bool:
     return 70 <= wc <= 260
 
 
-def generate_script(user: User, role: str, payload: dict) -> dict:
+def generate_script(user: User, role: str, payload: dict, prompt_fn=None) -> dict:
     from ...pipeline.analyzer import _claude, _extract_json
-    system, user_msg = _script_prompt(user, role, payload)
+    system, user_msg = (prompt_fn or _script_prompt)(user, role, payload)
     raw = _claude(system, user_msg, settings.claude_report_model, max_tokens=1200)
     try:
         out = _extract_json(raw)
@@ -158,6 +292,9 @@ def _submit_render(db, video: PerformanceVideo) -> None:
     if not settings.heygen_api_key:
         video.status = "text_only"
         return
+    # Monthly/quarterly reviews are presented by Gary (the director) — his own avatar if configured.
+    is_review = video.video_type in ("monthly_review", "quarterly_review")
+    avatar_id = (getattr(settings, "heygen_review_avatar_id", "") or settings.heygen_avatar_id) if is_review else settings.heygen_avatar_id
     try:
         import httpx
         r = httpx.post(
@@ -165,7 +302,7 @@ def _submit_render(db, video: PerformanceVideo) -> None:
             headers={"X-Api-Key": settings.heygen_api_key, "Content-Type": "application/json"},
             json={
                 "video_inputs": [{
-                    "character": {"type": "avatar", "avatar_id": settings.heygen_avatar_id,
+                    "character": {"type": "avatar", "avatar_id": avatar_id,
                                   "avatar_style": "normal"},
                     "voice": {"type": "text", "input_text": video.script,
                               "voice_id": settings.heygen_voice_id},
@@ -278,6 +415,74 @@ def ensure_weekly_video(db, user: User, regenerate: bool = False) -> Performance
         db.rollback()
         log.exception("weekly video commit failed for user %s", user.id)
     return v
+
+
+def ensure_review_video(db, user: User, period: str, asof: date | None = None,
+                        regenerate: bool = False) -> PerformanceVideo:
+    """Build (once) the monthly/quarterly REVIEW video for the period that just ended."""
+    from ..salesiq import fincal
+    role = role_for_user(db, user) or "rep"
+    asof = asof or date.today()
+    prior = _sales_month_before(fincal.current_sales_month(asof))
+    vtype = "quarterly_review" if period == "quarter" else "monthly_review"
+    pstart = datetime.combine(prior["start"], time.min)        # keyed by the reviewed month's start
+    existing = (db.query(PerformanceVideo)
+                .filter(PerformanceVideo.user_id == user.id, PerformanceVideo.video_type == vtype,
+                        PerformanceVideo.week_start == pstart).first())
+    if existing and not regenerate:
+        return existing
+    try:
+        payload = review_payload(db, user, role, asof, period)
+        s = generate_script(user, role, payload, prompt_fn=_review_script_prompt)
+    except Exception:
+        log.exception("review script generation failed for user %s", user.id)
+        payload, s = {}, {"title": f"{user.name}'s {period} review", "headline": "",
+                          "script": "Your performance review couldn't be generated — please check back shortly."}
+    v = existing or PerformanceVideo(user_id=user.id, video_type=vtype, week_start=pstart)
+    v.title, v.headline, v.script = s["title"], s["headline"], s["script"]
+    v.data_points, v.status, v.error, v.video_url, v.higgsfield_job_id = _json_safe(payload), "scripted", None, None, None
+    _submit_render(db, v)                  # reviews always render (Gary avatar) when HeyGen configured
+    if not existing:
+        db.add(v)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("review video commit failed for user %s", user.id)
+    return v
+
+
+def generate_all_reviews(db, asof: date | None = None) -> dict:
+    """Pre-generate monthly reviews for every active rep/BC (and quarterly when the new sales month
+    starts a BT quarter: Apr/Jul/Oct/Jan). Idempotent. Run early on the first Monday of the month."""
+    from ..salesiq.roles import role_for_user
+    from ..salesiq import fincal
+    asof = asof or date.today()
+    do_quarter = fincal.current_sales_month(asof)["month"] in (4, 7, 10, 1)
+    n, errors = 0, []
+    for u in db.query(User).filter(User.active.is_(True)).all():
+        try:
+            if role_for_user(db, u) not in ("rep", "bc"):
+                continue
+            ensure_review_video(db, u, "month", asof)
+            if do_quarter:
+                ensure_review_video(db, u, "quarter", asof)
+            n += 1
+        except Exception as e:
+            db.rollback()
+            errors.append(f"{u.name}: {str(e)[:160]}")
+            log.exception("review generation failed for user %s", u.id)
+    log.info("Pre-generated %d performance reviews (quarter=%s, %d errors)", n, do_quarter, len(errors))
+    return {"generated": n, "quarter": do_quarter, "errors": errors}
+
+
+def latest_review(db, user: User):
+    """The most recent monthly/quarterly review for a user (quarterly preferred when same month)."""
+    return (db.query(PerformanceVideo)
+            .filter(PerformanceVideo.user_id == user.id,
+                    PerformanceVideo.video_type.in_(["monthly_review", "quarterly_review"]))
+            .order_by(PerformanceVideo.week_start.desc(),
+                      PerformanceVideo.video_type.desc()).first())
 
 
 def generate_all_weekly(db) -> dict:

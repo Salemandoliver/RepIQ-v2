@@ -250,13 +250,27 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
             tag, action, score = "Callback owed", f"{rep} owes a callback — check it's booked.", 70
         else:
             tag, action, score = "Warm", f"{rep} should follow up to move this forward.", 60
+        # Momentum: heating up if the warm signal is fresh, cooling if it's aging without progress.
+        momentum = "up" if age <= 3 else ("down" if age >= 10 else "flat")
         deals.append({"company": co, "rep": rep, "userId": c.host_id, "callId": c.id,
+                      "dealKey": f"{c.host_id}:{co.lower()}", "momentum": momentum,
                       "tag": tag, "action": action, "proposal": proposal, "ageDays": age,
                       "_score": score - age})
     deals.sort(key=lambda d: -d["_score"])
     for d in deals:
         d.pop("_score", None)
-    return deals[:12]
+    deals = deals[:12]
+    # Attach the persisted "Being Actioned — {manager}" highlights (visible to every manager).
+    keys = [d["dealKey"] for d in deals]
+    if keys:
+        from ...models import DealHighlight
+        hl = {h.deal_key: h for h in db.query(DealHighlight)
+              .filter(DealHighlight.deal_key.in_(keys), DealHighlight.actioned.is_(True)).all()}
+        for d in deals:
+            h = hl.get(d["dealKey"])
+            d["actioned"] = bool(h)
+            d["actionedBy"] = h.actioned_by_name if h else None
+    return deals
 
 
 def _coaching_priority(db, asof: date):
@@ -296,6 +310,18 @@ def command_centre(db, manager: User, team: str | None = None) -> dict:
         coaching_priority = _coaching_priority(db, asof)
     except Exception:
         coaching_priority = None
+    # Latest monthly/quarterly review videos for the team (only when any exist — i.e. first week
+    # of the month onward). Managers can watch each rep's intelligent review here.
+    reviews = []
+    try:
+        from .videos import latest_review, video_payload
+        for u in reps:
+            v = latest_review(db, u)
+            if v:
+                reviews.append({**video_payload(v), "repName": u.short_name or u.name,
+                                "avatarColor": getattr(u, "avatar_color", None)})
+    except Exception:
+        pass
     return {
         "meta": {"computedAt": datetime.utcnow().isoformat() + "Z",
                  "manager": manager.name, "team": team or "all",
@@ -303,6 +329,7 @@ def command_centre(db, manager: User, team: str | None = None) -> dict:
         "aggregates": aggregates,
         "deals": deals,
         "alerts": alerts,
+        "reviews": reviews,
         "coachingPriority": coaching_priority,
         "reps": cards,
     }

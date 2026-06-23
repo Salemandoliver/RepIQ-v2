@@ -298,6 +298,21 @@ class PerformanceVideo(Base):
 Index("ix_perfvideo_user_week", PerformanceVideo.user_id, PerformanceVideo.week_start)
 
 
+class DealHighlight(Base):
+    """A manager flagging a 'deal to get over the line' as being actioned — shared across all
+    managers, with who actioned it. Keyed by the deal's stable host:company key (deals are
+    recomputed each load, not stored)."""
+    __tablename__ = "deal_highlights"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_key: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    rep_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    actioned: Mapped[bool] = mapped_column(Boolean, default=True)
+    actioned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    actioned_by_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    actioned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Setting(Base):
     """Misc org settings: ai_context, org_name, etc."""
     __tablename__ = "settings"

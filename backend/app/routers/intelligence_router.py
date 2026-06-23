@@ -256,6 +256,35 @@ def team(team: str | None = None, db: Session = Depends(get_db),
     return command_centre(db, user, team=team)
 
 
+@router.post("/deals/highlight")
+def highlight_deal(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Manager toggles 'Being Actioned' on a deal — shared with every manager, stamped with who."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from datetime import datetime as _dt
+    from ..models import DealHighlight
+    key = (body.get("dealKey") or "").strip()
+    if not key:
+        raise HTTPException(400, "dealKey required")
+    actioned = bool(body.get("actioned", True))
+    row = db.query(DealHighlight).filter(DealHighlight.deal_key == key).first()
+    if actioned:
+        if not row:
+            row = DealHighlight(deal_key=key)
+            db.add(row)
+        row.actioned = True
+        row.actioned_by_id = user.id
+        row.actioned_by_name = user.short_name or user.name
+        row.actioned_at = _dt.utcnow()
+        row.company = body.get("company") or row.company
+        row.rep_name = body.get("rep") or row.rep_name
+    elif row:
+        db.delete(row)
+    db.commit()
+    return {"ok": True, "actioned": actioned,
+            "actionedBy": (user.short_name or user.name) if actioned else None}
+
+
 def _safe_weekly(db, target: User) -> dict:
     """Never 500 — always return a payload (with the briefing if we have it) so the card shows
     content; carry any error so it can be surfaced for diagnosis."""
@@ -277,6 +306,41 @@ def _safe_weekly(db, target: User) -> dict:
 def my_weekly_video(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """This week's AI performance video/briefing for the signed-in rep/BC."""
     return _safe_weekly(db, user)
+
+
+@router.get("/video/review")
+def my_review(user_id: int | None = None, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """The latest monthly/quarterly REVIEW for the signed-in rep (or, for a manager, any user_id)."""
+    from ..services.intelligence.videos import latest_review, refresh_video, video_payload
+    target = user
+    if user_id and user_id != user.id:
+        if not _is_manager(db, user):
+            raise HTTPException(403, "Managers only")
+        target = db.get(User, user_id) or user
+    v = latest_review(db, target)
+    if not v:
+        return {"hasReview": False}
+    try:
+        refresh_video(db, v)
+    except Exception:
+        pass
+    return {"hasReview": True, **video_payload(v)}
+
+
+@router.post("/video/generate-reviews")
+def generate_reviews_ep(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Manager/admin: pre-generate the monthly (and quarterly when due) reviews for all reps/BCs."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..services.intelligence.videos import generate_all_reviews
+    try:
+        return generate_all_reviews(db)
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("calliq").exception("generate-reviews failed")
+        return {"generated": 0, "errors": [str(e)[:300]]}
 
 
 @router.post("/video/generate-all")

@@ -3,6 +3,7 @@ import { useOutletContext, Link } from "react-router-dom";
 import { api } from "../api";
 import { EmptyState } from "../components/ui.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
+import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamCompareCard from "../components/TeamCompareCard.jsx";
 import LiveCampaigns from "../components/LiveCampaigns.jsx";
 import { MyFocus } from "../components/Insights.jsx";
@@ -343,6 +344,7 @@ export default function MorningDashboard() {
       )}
         </div>
         <aside style={{ flex: "0 1 360px", minWidth: 280, marginLeft: "0.5cm", position: "sticky", top: 24 }}>
+          <ReviewVideo />
           <WeeklyVideo />
         </aside>
       </div>
