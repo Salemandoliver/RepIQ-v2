@@ -60,6 +60,28 @@ def _rep_card(db, user: User, asof: date) -> dict:
     from .common import trend_direction
     direction = trend_direction(recent, prior, "quality", True)
 
+    # Short "why" brief for the declining-quality alert: this week vs last + the likely drivers.
+    decline_detail = None
+    if direction == "declining":
+        ra, pa = averages(recent), averages(prior)
+        if ra.get("quality") is not None and pa.get("quality") is not None:
+            rq, pq = round(ra["quality"]), round(pa["quality"])
+            parts = [f"Avg call quality {rq}/100 this week vs {pq} last week"
+                     + (f" (down {pq - rq})." if pq > rq else ".")]
+            drivers = []
+            if ra.get("talk_ratio") and pa.get("talk_ratio") and ra["talk_ratio"] - pa["talk_ratio"] >= 3:
+                drivers.append(f"talking more ({round(ra['talk_ratio'])}% vs {round(pa['talk_ratio'])}%)")
+            if (ra.get("questions") is not None and pa.get("questions") is not None
+                    and pa["questions"] - ra["questions"] >= 0.5):
+                drivers.append(f"asking fewer questions ({round(ra['questions'], 1)} vs {round(pa['questions'], 1)}/call)")
+            if (ra.get("interruptions") is not None and pa.get("interruptions") is not None
+                    and ra["interruptions"] - pa["interruptions"] >= 1):
+                drivers.append(f"interrupting more ({round(ra['interruptions'], 1)} vs {round(pa['interruptions'], 1)}/call)")
+            if drivers:
+                parts.append("Likely drivers: " + ", ".join(drivers) + ".")
+            parts.append(f"Based on {len(recent)} call(s) this week. Open their scorecard for the calls behind it.")
+            decline_detail = " ".join(parts)
+
     avg30 = rep_averages(db, user.id, days=30, asof=ys)
     start30 = now - timedelta(days=30)
     rows30 = load_call_metrics(db, user.id, start30, now)
@@ -79,6 +101,7 @@ def _rep_card(db, user: User, asof: date) -> dict:
         "dailyAvgCalls": daily_avg, "trend": _arrow(direction),
         "achievementPct": pct, "rag": rag,
         "callsToday": int(today_n),
+        "declineDetail": decline_detail,
         "alerts": [],  # filled by _alerts
     }
 
@@ -121,7 +144,8 @@ def _alerts(db, cards: list[dict], asof: date) -> list[dict]:
         if c["trend"] == "declining" and (c["yesterdayQuality"] is not None):
             out.append({"userId": c["userId"], "severity": "warn", "type": "declining",
                         "text": f"{c['name']}'s call quality has been declining this week — "
-                                "worth a check-in.", "rep": c["name"]})
+                                "worth a check-in.", "rep": c["name"],
+                        "detail": c.get("declineDetail")})
             c["alerts"].append("declining")
         if c["trend"] == "improving" and (c["yesterdayQuality"] or 0) >= 65:
             out.append({"userId": c["userId"], "severity": "good", "type": "improving",
@@ -194,13 +218,12 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
                      Call.started_at >= since,
                      Call.outcome.in_(["interested", "callback"]))
              .order_by(Call.started_at.desc()).all())
-    qmap = _avg_scores(db, [c.id for c in calls]) if calls else {}
     seen, deals = set(), []
     for c in calls:
-        # Only surface REAL warm conversations — a voicemail / no-answer that a rep mislabelled as
-        # "interested" isn't a deal to push. Filter out the very short or very low-quality calls.
-        q = quality_100(qmap[c.id]) if c.id in qmap else None
-        if (c.duration_sec or 0) < 45 or (q is not None and q < 35):
+        # Only surface REAL warm conversations — a voicemail / no-answer a rep mislabelled as
+        # "interested" isn't a deal to push. A voicemail is short; duration is the reliable signal
+        # here (this team's quality scores are uniformly low, so quality alone over-filters).
+        if (c.duration_sec or 0) < 45:
             continue
         co = (c.customer_company or c.customer_name or "Unknown").strip()
         key = (c.host_id, co.lower())

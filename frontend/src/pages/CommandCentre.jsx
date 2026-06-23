@@ -218,12 +218,24 @@ export default function CommandCentre() {
 
             {others.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10, marginBottom: behind.length ? 16 : 0 }}>
+                <style>{`
+                  .cc-alert { position: relative; }
+                  .cc-alert.has-tip { cursor: help; }
+                  .cc-tip { position: absolute; left: 12px; right: 12px; top: calc(100% + 6px); z-index: 50;
+                    background: #1f2430; color: #fff; border-radius: 8px; padding: 9px 11px; font-size: 12px;
+                    font-weight: 400; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.22);
+                    opacity: 0; visibility: hidden; transition: .12s ease; transform: translateY(-3px); }
+                  .cc-alert:hover .cc-tip, .cc-alert:focus .cc-tip { opacity: 1; visibility: visible; transform: translateY(0); }
+                `}</style>
                 {others.map((al, i) => {
                   const m = ALERT_META[al.type] || { icon: "•", bg: "#f3f4f6", bar: "var(--text-soft)" };
                   return (
-                    <div key={i} className="flex" style={{ gap: 11, alignItems: "center", background: m.bg, borderLeft: `3px solid ${m.bar}`, borderRadius: 9, padding: "11px 13px" }}>
+                    <div key={i} tabIndex={al.detail ? 0 : undefined}
+                      className={"cc-alert flex" + (al.detail ? " has-tip" : "")}
+                      style={{ gap: 11, alignItems: "center", background: m.bg, borderLeft: `3px solid ${m.bar}`, borderRadius: 9, padding: "11px 13px" }}>
                       <span style={{ fontSize: 19, lineHeight: 1 }}>{m.icon}</span>
-                      <span className="small" style={{ lineHeight: 1.4 }}>{al.text}</span>
+                      <span className="small" style={{ lineHeight: 1.4 }}>{al.text}{al.detail ? <span style={{ color: "var(--text-faint)" }}> ⓘ</span> : null}</span>
+                      {al.detail && <span className="cc-tip">{al.detail}</span>}
                     </div>
                   );
                 })}
