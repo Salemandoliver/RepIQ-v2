@@ -5,12 +5,12 @@ import Markdown from "./Markdown.jsx";
 /* Monthly / quarterly intelligent performance REVIEW, presented by Gary. Renders nothing unless a
    review exists for the period (so it only appears from the first Monday of the month onward).
    userId omitted = the signed-in rep's own; userId set = a manager viewing that person's. */
-export default function ReviewVideo({ userId }) {
+export default function ReviewVideo({ userId, reloadKey }) {
   const [v, setV] = useState(null);
   useEffect(() => {
     const path = userId ? `/api/intelligence/video/review?user_id=${userId}` : "/api/intelligence/video/review";
     api.get(path).then((d) => setV(d)).catch(() => {});
-  }, [userId]);
+  }, [userId, reloadKey]);
 
   if (!v || !v.hasReview) return null;
   const label = v.type === "quarterly_review" ? "Quarterly review" : "Monthly review";

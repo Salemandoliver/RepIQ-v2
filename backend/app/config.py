@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     heygen_avatar_id: str = "Daisy-inskirt-20220818"   # a HeyGen stock presenter (override in env)
     heygen_voice_id: str = "2d5b0e6cf36f460aa7fc47e3eee4ba54"  # a HeyGen stock voice (override in env)
     heygen_review_avatar_id: str = ""   # Gary's avatar for monthly/quarterly reviews (falls back to heygen_avatar_id)
+    heygen_review_voice_id: str = ""    # Gary's voice for monthly/quarterly reviews (falls back to heygen_voice_id)
     # Only RENDER HeyGen videos (which cost credits) for users whose team name contains one of
     # these comma-separated substrings; empty = everyone. Phased rollout — start with Volume.
     video_teams: str = "volume"

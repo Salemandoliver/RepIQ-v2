@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Avatar, Spinner, EmptyState, Modal } from "../components/ui.jsx";
+import { Avatar, Spinner, EmptyState, Modal, CollapsibleCard } from "../components/ui.jsx";
 import WeeklyVideo from "../components/WeeklyVideo.jsx";
 import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamLeague from "../components/TeamLeague.jsx";
@@ -14,18 +14,42 @@ import { formatDuration } from "../utils";
 function WeeklyVideoPicker() {
   const [people, setPeople] = useState([]);
   const [sel, setSel] = useState("");
+  const [period, setPeriod] = useState("month");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => { api.get("/api/intelligence/video/people").then((d) => setPeople(d.people || [])).catch(() => {}); }, []);
+
+  const genReview = async () => {
+    if (!sel) return;
+    setBusy(true); setMsg("Generating review…");
+    try {
+      const r = await api.post("/api/intelligence/video/review/generate", { userId: Number(sel), period });
+      setMsg(r.hasVideo ? "Review ready — video rendered." : r.status === "rendering" ? "Script ready — video rendering…" : "Review written (set HeyGen keys to render Gary's video).");
+      setReloadKey((k) => k + 1);
+    } catch (e) { setMsg(e.message || "Couldn't generate the review."); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div className="flex" style={{ gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+      <div className="flex" style={{ gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <span aria-hidden="true">🎬</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>Performance videos</span>
-        <select className="input" value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "auto", marginLeft: "auto" }} aria-label="Choose a rep or BC">
+        <select className="input" value={sel} onChange={(e) => { setSel(e.target.value); setMsg(""); }} style={{ width: "auto", marginLeft: "auto" }} aria-label="Choose a rep or BC">
           <option value="">Choose a rep / BC…</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}{p.role === "bc" ? " (BC)" : ""}</option>)}
         </select>
+        {sel && <>
+          <select className="input" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ width: "auto" }} aria-label="Review period">
+            <option value="month">Monthly</option>
+            <option value="quarter">Quarterly</option>
+          </select>
+          <button className="btn btn-outline btn-sm" disabled={busy} onClick={genReview} title="Generate this rep's review now (for testing)">{busy ? "Working…" : "↻ Generate review (test)"}</button>
+        </>}
       </div>
-      {sel ? <><ReviewVideo userId={Number(sel)} /><WeeklyVideo userId={Number(sel)} /></> : <div className="muted small">Pick a rep or BC to watch their weekly video and monthly/quarterly review.</div>}
+      {msg && <div className="muted small" style={{ marginBottom: 10 }}>{msg}</div>}
+      {sel ? <><ReviewVideo userId={Number(sel)} reloadKey={reloadKey} /><WeeklyVideo userId={Number(sel)} /></> : <div className="muted small">Pick a rep or BC to watch their weekly video and monthly/quarterly review.</div>}
     </div>
   );
 }
@@ -196,13 +220,10 @@ export default function CommandCentre() {
       {/* Weekly performance videos — pick any rep/BC */}
       <WeeklyVideoPicker />
 
-      {/* Deals to get over the line */}
+      {/* Deals to get over the line — collapsible to keep the view clean */}
       {data.deals?.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="spread" style={{ marginBottom: 12 }}>
-            <div className="card-title" style={{ margin: 0 }}>🔥 Deals to get over the line</div>
-            <span className="muted small">warm &amp; open · push to signing</span>
-          </div>
+        <CollapsibleCard title="🔥 Deals to get over the line" style={{ marginBottom: 16 }}
+          actions={<span className="muted small">{data.deals.length} warm &amp; open · push to signing</span>}>
           {data.deals.map((d, i) => {
             const t = DEAL_TAG[d.tag] || DEAL_TAG["Warm"];
             const arrow = d.momentum === "up" ? { c: "var(--green)", g: "↑", t: "heating up" }
@@ -231,7 +252,7 @@ export default function CommandCentre() {
               </div>
             );
           })}
-        </div>
+        </CollapsibleCard>
       )}
 
       {/* Smart alerts */}

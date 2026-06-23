@@ -328,6 +328,31 @@ def my_review(user_id: int | None = None, db: Session = Depends(get_db),
     return {"hasReview": True, **video_payload(v)}
 
 
+@router.post("/video/review/generate")
+def generate_one_review(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Manager: generate ONE rep's monthly (or quarterly) review on demand — for testing without
+    waiting for the first Monday. Regenerates if it already exists."""
+    if not _is_manager(db, user):
+        raise HTTPException(403, "Managers only")
+    from ..services.intelligence.videos import ensure_review_video, refresh_video, video_payload
+    target = db.get(User, body.get("userId")) if body.get("userId") else user
+    if not target:
+        raise HTTPException(404, "User not found")
+    period = "quarter" if (body.get("period") == "quarter") else "month"
+    try:
+        v = ensure_review_video(db, target, period, regenerate=True)
+        try:
+            refresh_video(db, v)
+        except Exception:
+            pass
+        return {"ok": True, **video_payload(v)}
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("calliq").exception("single review generate failed")
+        raise HTTPException(500, str(e)[:300])
+
+
 @router.post("/video/generate-reviews")
 def generate_reviews_ep(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Manager/admin: pre-generate the monthly (and quarterly when due) reviews for all reps/BCs."""

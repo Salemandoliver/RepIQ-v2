@@ -232,8 +232,8 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         f"{target_line}"
     )
     system = (
-        "You are a warm, motivating sales coach at BT Local Business Oxford & Bucks (UK telecom). "
-        "You write a short spoken script for a personalised weekly performance video for ONE rep. "
+        "You are Oliver, a warm, motivating sales coach at BT Local Business Oxford & Bucks (UK "
+        "telecom). You write a short spoken script for a personalised weekly performance video for ONE rep. "
         "Tone: positive, specific, encouraging — NEVER punishing. Never say 'you underperformed' "
         "or 'you need to do better'. UK English, second person ('you'). 60–90 seconds = roughly "
         "130–190 words. Structure: 1) greet them by first name; 2) last week's headline result as "
@@ -292,9 +292,10 @@ def _submit_render(db, video: PerformanceVideo) -> None:
     if not settings.heygen_api_key:
         video.status = "text_only"
         return
-    # Monthly/quarterly reviews are presented by Gary (the director) — his own avatar if configured.
+    # Monthly/quarterly reviews are presented by Gary (the director) — his own avatar + voice if set.
     is_review = video.video_type in ("monthly_review", "quarterly_review")
     avatar_id = (getattr(settings, "heygen_review_avatar_id", "") or settings.heygen_avatar_id) if is_review else settings.heygen_avatar_id
+    voice_id = (getattr(settings, "heygen_review_voice_id", "") or settings.heygen_voice_id) if is_review else settings.heygen_voice_id
     try:
         import httpx
         r = httpx.post(
@@ -305,7 +306,7 @@ def _submit_render(db, video: PerformanceVideo) -> None:
                     "character": {"type": "avatar", "avatar_id": avatar_id,
                                   "avatar_style": "normal"},
                     "voice": {"type": "text", "input_text": video.script,
-                              "voice_id": settings.heygen_voice_id},
+                              "voice_id": voice_id},
                 }],
                 "dimension": {"width": 1280, "height": 720},
                 "title": (video.title or "Weekly performance")[:100],

@@ -38,7 +38,7 @@ export default function WeeklyVideo({ userId }) {
       <div className="flex" style={{ gap: 8, marginBottom: 10 }}>
         <span aria-hidden="true">🎬</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{userId ? (v.title || "Weekly performance video") : "Your weekly performance video"}</span>
-        {wk && <span className="muted small" style={{ marginLeft: "auto" }}>week of {wk}</span>}
+        <span className="muted small" style={{ marginLeft: "auto" }}>{wk ? `presented by Oliver · week of ${wk}` : "presented by Oliver"}</span>
       </div>
 
       {v.hasVideo && (
