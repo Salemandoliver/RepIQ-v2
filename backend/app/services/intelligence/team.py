@@ -87,8 +87,34 @@ def _alerts(db, cards: list[dict], asof: date) -> list[dict]:
     out = []
     now = datetime.utcnow()
     after_late_morning = now.hour >= 10  # ~11:30 BST
+    is_working_day = asof.weekday() < 5  # don't flag 0-calls at weekends
+    # Reps on leave today (annual/sick/etc.) must NOT be flagged for "0 calls" — respect HR leave.
+    on_leave_today = set()
+    try:
+        from ...modules.hr import leave as hr_leave
+        on_leave_today = {r["user_id"] for r in hr_leave.leave_rows(db, asof, asof)}
+    except Exception:
+        pass
+    # Fallback / belt-and-braces: also honour the SharePoint Holiday Tracker (matched by name),
+    # in case the in-app HR leave hasn't been synced. Code 'B' = company-wide bank holiday, skip.
+    try:
+        from ..salesiq import trackers
+        from ..salesiq.roles import user_agent_match
+        if trackers.holiday_configured():
+            off_names = [h.get("name") for h in trackers.holiday_rows()
+                         if h.get("date") == asof and str(h.get("code") or "").upper() != "B"]
+            if off_names:
+                for c in cards:
+                    if c["userId"] in on_leave_today:
+                        continue
+                    u = db.get(User, c["userId"])
+                    if u and any(user_agent_match(u, nm) for nm in off_names):
+                        on_leave_today.add(c["userId"])
+    except Exception:
+        pass
     for c in cards:
-        if after_late_morning and c["callsToday"] == 0 and (c["dailyAvgCalls"] or 0) >= 2:
+        if (after_late_morning and is_working_day and c["callsToday"] == 0
+                and (c["dailyAvgCalls"] or 0) >= 2 and c["userId"] not in on_leave_today):
             out.append({"userId": c["userId"], "severity": "warn", "type": "no_calls",
                         "text": f"{c['name']} has made 0 calls today.", "rep": c["name"]})
             c["alerts"].append("no_calls")
@@ -168,8 +194,14 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
                      Call.started_at >= since,
                      Call.outcome.in_(["interested", "callback"]))
              .order_by(Call.started_at.desc()).all())
+    qmap = _avg_scores(db, [c.id for c in calls]) if calls else {}
     seen, deals = set(), []
     for c in calls:
+        # Only surface REAL warm conversations — a voicemail / no-answer that a rep mislabelled as
+        # "interested" isn't a deal to push. Filter out the very short or very low-quality calls.
+        q = quality_100(qmap[c.id]) if c.id in qmap else None
+        if (c.duration_sec or 0) < 45 or (q is not None and q < 35):
+            continue
         co = (c.customer_company or c.customer_name or "Unknown").strip()
         key = (c.host_id, co.lower())
         if key in seen:
