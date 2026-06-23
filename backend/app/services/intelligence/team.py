@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func
 
-from ...models import Call, User
+from ...models import Call, CallAnalysis, User
 from ..salesiq.dashboard import bc_dashboard, rep_dashboard
 from ..salesiq.roles import role_for_user
 from .common import averages, load_call_metrics, quality_100, rep_averages, _avg_scores
@@ -61,8 +61,9 @@ def _rep_card(db, user: User, asof: date) -> dict:
     direction = trend_direction(recent, prior, "quality", True)
 
     # Short "why" brief for the declining-quality alert: this week vs last + the likely drivers.
+    # (trend_direction returns "up"/"down"/"flat" — "down" == quality declining.)
     decline_detail = None
-    if direction == "declining":
+    if direction == "down":
         ra, pa = averages(recent), averages(prior)
         if ra.get("quality") is not None and pa.get("quality") is not None:
             rq, pq = round(ra["quality"]), round(pa["quality"])
@@ -205,25 +206,35 @@ def _team_aggregates(db, cards: list[dict], reps: list[User], asof: date) -> dic
 
 
 def _deals(db, reps: list[User], asof: date) -> list[dict]:
-    """Open opportunities across the team the manager should help push to signing — warm
-    call outcomes (interested / callback) and outstanding proposals. (Lemlist/Apollo
-    engagement enrichment is added in Stage 2.)"""
+    """Open opportunities across the team the manager should help push to signing. Sourced from
+    BOTH a logged warm outcome (interested / callback) AND AI signals on real conversations —
+    positive customer sentiment or an extracted commitment (proposal / next step / callback /
+    email promised) — so genuine warm calls surface even when the rep didn't log an outcome.
+    (Lemlist/Apollo engagement enrichment is added in Stage 2.)"""
     from sqlalchemy.orm import joinedload
+    from sqlalchemy import or_
     ids = [u.id for u in reps]
     if not ids:
         return []
     since = datetime.combine(asof - timedelta(days=21), time.min)
     calls = (db.query(Call).options(joinedload(Call.analysis), joinedload(Call.host))
-             .filter(Call.host_id.in_(ids), Call.status == "completed",
-                     Call.started_at >= since,
-                     Call.outcome.in_(["interested", "callback"]))
+             .outerjoin(CallAnalysis, CallAnalysis.call_id == Call.id)
+             .filter(Call.host_id.in_(ids), Call.status == "completed", Call.started_at >= since,
+                     or_(Call.outcome.in_(["interested", "callback"]),
+                         CallAnalysis.sentiment == "positive"))
              .order_by(Call.started_at.desc()).all())
     seen, deals = set(), []
     for c in calls:
-        # Only surface REAL warm conversations — a voicemail / no-answer a rep mislabelled as
-        # "interested" isn't a deal to push. A voicemail is short; duration is the reliable signal
-        # here (this team's quality scores are uniformly low, so quality alone over-filters).
-        if (c.duration_sec or 0) < 45:
+        # Skip voicemails / no-answers — a real warm conversation isn't tiny. Only drop calls whose
+        # duration is KNOWN to be short (don't nuke calls that simply have no duration recorded).
+        if c.duration_sec is not None and c.duration_sec < 45:
+            continue
+        fu = (c.analysis.followups or {}) if c.analysis else {}
+        proposal = fu.get("proposal_needed") or ""
+        commitment = proposal or fu.get("next_step") or fu.get("callback") or fu.get("email_promised")
+        warm = (c.outcome in ("interested", "callback")
+                or (c.analysis and c.analysis.sentiment == "positive") or bool(commitment))
+        if not warm:
             continue
         co = (c.customer_company or c.customer_name or "Unknown").strip()
         key = (c.host_id, co.lower())
@@ -231,11 +242,11 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
             continue
         seen.add(key)
         rep = c.host.name if c.host else "Rep"
-        proposal = ((c.analysis.followups or {}).get("proposal_needed") if c.analysis else "") or ""
+        is_callback = c.outcome == "callback" or bool(fu.get("callback"))
         age = (asof - c.started_at.date()).days
         if proposal:
             tag, action, score = "Proposal due", f"Proposal outstanding — make sure {rep} builds and sends it.", 100
-        elif c.outcome == "callback":
+        elif is_callback:
             tag, action, score = "Callback owed", f"{rep} owes a callback — check it's booked.", 70
         else:
             tag, action, score = "Warm", f"{rep} should follow up to move this forward.", 60
