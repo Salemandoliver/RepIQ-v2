@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
 import { Skeleton } from "./ui.jsx";
@@ -94,6 +94,10 @@ export default function OracleAsk() {
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(true);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
+  const finalRef = useRef("");
+  useEffect(() => () => { try { recRef.current?.abort?.(); } catch { /* ignore */ } }, []);
 
   const ask = async (question, useMode) => {
     const text = (question ?? q).trim();
@@ -108,6 +112,27 @@ export default function OracleAsk() {
     } catch (e) {
       setRes({ answer: e.message || "The Oracle hit an error.", sources: [] });
     } finally { setBusy(false); }
+  };
+
+  // Voice input — dictate the question; on a final transcript, ask it automatically.
+  const toggleVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice input isn't supported in this browser."); return; }
+    if (listening) { try { recRef.current?.stop(); } catch { /* ignore */ } return; }
+    const rec = new SR();
+    rec.lang = "en-GB"; rec.interimResults = true; rec.continuous = false;
+    rec.onresult = (e) => {
+      let interim = "", final = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript;
+      }
+      if (final) { finalRef.current = final.trim(); setQ(final.trim()); } else if (interim) setQ(interim);
+    };
+    rec.onend = () => { setListening(false); recRef.current = null; const t = finalRef.current.trim(); finalRef.current = ""; if (t) ask(t); };
+    rec.onerror = () => {};
+    recRef.current = rec; finalRef.current = ""; setListening(true);
+    try { rec.start(); } catch { setListening(false); recRef.current = null; }
   };
 
   const subtitle = mode === "patterns"
@@ -132,6 +157,8 @@ export default function OracleAsk() {
           <div className="flex" style={{ gap: 8, marginBottom: 8 }}>
             <input className="input" placeholder={mode === "patterns" ? "Ask anything about the team…" : "Ask about this period…"}
               value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} style={{ flex: 1 }} />
+            <button type="button" onClick={toggleVoice} className="btn btn-outline" title={listening ? "Stop" : "Ask by voice"}
+              style={listening ? { color: "#fff", background: "var(--red)", borderColor: "var(--red)" } : {}} aria-label="Ask by voice">🎤</button>
             <button className="btn btn-primary" onClick={() => ask()} disabled={busy}>{busy ? "Thinking…" : "Ask"}</button>
           </div>
           <div className="flex" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>

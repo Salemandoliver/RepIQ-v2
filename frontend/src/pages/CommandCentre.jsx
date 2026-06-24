@@ -147,22 +147,28 @@ function Stat({ label, value, sub }) {
   );
 }
 
+// Deal highlight cycles through three stages on each click.
+const NEXT_STATUS = { null: "actioning", actioning: "actioned", actioned: null };
+
 export default function CommandCentre() {
-  const { data, loading, refresh } = useCachedGet("/api/intelligence/team");
+  // Keep the team data cached for 30 min so returning to this page (e.g. after listening to a
+  // call) serves instantly from cache while any refresh happens silently in the background.
+  const { data, loading, refresh } = useCachedGet("/api/intelligence/team", { ttl: 30 * 60 * 1000 });
   const [sort, setSort] = useState("achievementPct");
   const [drill, setDrill] = useState(null);
   const [hl, setHl] = useState({});         // local override of deal highlight state, by dealKey
   const load = refresh;
 
-  const toggleDeal = async (d) => {
-    const cur = hl[d.dealKey]?.actioned ?? d.actioned;
-    const next = !cur;
-    setHl((m) => ({ ...m, [d.dealKey]: { actioned: next, actionedBy: next ? "You" : null } }));
+  // Cycle a deal: (none) → Highlight/Actioning → Actioned → (none). Shared across all managers.
+  const cycleDeal = async (d) => {
+    const cur = hl[d.dealKey]?.status ?? d.status ?? null;
+    const next = NEXT_STATUS[cur] ?? "actioning";
+    setHl((m) => ({ ...m, [d.dealKey]: { status: next, actionedBy: next ? "You" : null } }));
     try {
-      const r = await api.post("/api/intelligence/deals/highlight", { dealKey: d.dealKey, company: d.company, rep: d.rep, actioned: next });
-      setHl((m) => ({ ...m, [d.dealKey]: { actioned: r.actioned, actionedBy: r.actionedBy } }));
+      const r = await api.post("/api/intelligence/deals/highlight", { dealKey: d.dealKey, company: d.company, rep: d.rep, status: next });
+      setHl((m) => ({ ...m, [d.dealKey]: { status: r.status ?? null, actionedBy: r.actionedBy } }));
     } catch (e) {
-      setHl((m) => ({ ...m, [d.dealKey]: { actioned: cur, actionedBy: d.actionedBy } }));   // revert
+      setHl((m) => ({ ...m, [d.dealKey]: { status: cur, actionedBy: d.actionedBy } }));   // revert
     }
   };
 
@@ -176,7 +182,10 @@ export default function CommandCentre() {
     return rows;
   }, [data, sort]);
 
-  if (loading) return (
+  // Only block the whole page on the very first load (no cached data yet). On return visits we
+  // already have data, so we render it immediately and let any refresh run silently in the
+  // background (the Refresh button shows "Refreshing…") — no more multi-minute blank wait.
+  if (loading && !data) return (
     <div className="page" style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 22px" }}>
       <h1 style={{ margin: 0, fontSize: 26 }}>Team Command Centre</h1>
       <div className="muted small">Pulling the team together…</div>
@@ -229,10 +238,14 @@ export default function CommandCentre() {
             const arrow = d.momentum === "up" ? { c: "var(--green)", g: "↑", t: "heating up" }
               : d.momentum === "down" ? { c: "var(--red)", g: "↓", t: "going cold" }
               : { c: "var(--text-faint)", g: "→", t: "steady" };
-            const actioned = hl[d.dealKey]?.actioned ?? d.actioned;
+            const status = hl[d.dealKey]?.status ?? d.status ?? null;   // null | "actioning" | "actioned"
             const actionedBy = hl[d.dealKey]?.actionedBy ?? d.actionedBy;
+            const isActioning = status === "actioning";
+            const isActioned = status === "actioned";
+            const rowBg = isActioned ? "color-mix(in srgb, var(--green) 8%, transparent)"
+              : isActioning ? "color-mix(in srgb, var(--accent) 6%, transparent)" : undefined;
             return (
-              <div key={i} className="flex" style={{ gap: 11, alignItems: "flex-start", padding: "11px 0", borderTop: i ? "1px solid var(--border)" : "none", background: actioned ? "color-mix(in srgb, var(--green) 5%, transparent)" : undefined }}>
+              <div key={i} className="flex" style={{ gap: 11, alignItems: "flex-start", padding: "11px 0", borderTop: i ? "1px solid var(--border)" : "none", background: rowBg }}>
                 <span className="small" style={{ fontWeight: 600, padding: "3px 9px", borderRadius: 8, whiteSpace: "nowrap", background: t.bg, color: t.color }}>{d.tag}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14 }}>
@@ -249,12 +262,14 @@ export default function CommandCentre() {
                       ))}
                     </div>
                   )}
-                  {actioned && <div className="small" style={{ marginTop: 4, color: "var(--green)", fontWeight: 600 }}>✓ Being actioned{actionedBy ? ` — ${actionedBy}` : ""}</div>}
+                  {isActioning && <div className="small" style={{ marginTop: 4, color: "var(--accent)", fontWeight: 600 }}>● Being actioned{actionedBy ? ` — ${actionedBy}` : ""}</div>}
+                  {isActioned && <div className="small" style={{ marginTop: 4, color: "var(--green)", fontWeight: 600 }}>✓ Actioned{actionedBy ? ` — ${actionedBy}` : ""}</div>}
                 </div>
                 <div className="flex" style={{ gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button className={`btn btn-sm ${actioned ? "btn-primary" : "btn-outline"}`} onClick={() => toggleDeal(d)}
-                    title={actioned ? "Un-highlight (no longer being actioned)" : "Mark as being actioned (shared with all managers)"}>
-                    {actioned ? "✓ Actioning" : "Highlight"}
+                  <button className={`btn btn-sm ${isActioning ? "btn-primary" : "btn-outline"}`} onClick={() => cycleDeal(d)}
+                    style={isActioned ? { background: "var(--green)", borderColor: "var(--green)", color: "#fff" } : undefined}
+                    title={isActioned ? "Done — click to clear the highlight" : isActioning ? "Mark as actioned (done)" : "Mark as being actioned (shared with all managers)"}>
+                    {isActioned ? "✓ Actioned" : isActioning ? "✓ Actioning" : "Highlight"}
                   </button>
                   <Link to={`/calls/${d.callId}`} className="btn btn-outline btn-sm">Open</Link>
                 </div>

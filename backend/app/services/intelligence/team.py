@@ -287,6 +287,7 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
         for d in deals:
             h = hl.get(d["dealKey"])
             d["actioned"] = bool(h)
+            d["status"] = (getattr(h, "status", None) or "actioning") if h else None
             d["actionedBy"] = h.actioned_by_name if h else None
     return deals
 

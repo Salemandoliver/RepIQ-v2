@@ -86,6 +86,8 @@ def _ensure_columns():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS placed_at TIMESTAMP",
         # Cobra GM = the GM BT actually paid us per line (drives the commission run).
         "ALTER TABLE order_lines ADD COLUMN IF NOT EXISTS cobra_gm DOUBLE PRECISION",
+        # Deal highlight tri-state: "actioning" (being worked) → "actioned" (done).
+        "ALTER TABLE deal_highlights ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'actioning'",
     ]
     from sqlalchemy import text
     # Each statement in its OWN transaction — so one failure can't abort the others (a single

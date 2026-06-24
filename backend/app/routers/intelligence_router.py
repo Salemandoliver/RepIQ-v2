@@ -258,7 +258,9 @@ def team(team: str | None = None, db: Session = Depends(get_db),
 
 @router.post("/deals/highlight")
 def highlight_deal(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Manager toggles 'Being Actioned' on a deal — shared with every manager, stamped with who."""
+    """Manager cycles a deal through Highlight → Actioning → Actioned — shared with every manager,
+    stamped with who. Tri-state via `status` ("actioning"/"actioned"); anything else clears it.
+    Back-compatible with older clients that send `actioned` as a boolean."""
     if not _is_manager(db, user):
         raise HTTPException(403, "Managers only")
     from datetime import datetime as _dt
@@ -266,13 +268,18 @@ def highlight_deal(body: dict, db: Session = Depends(get_db), user: User = Depen
     key = (body.get("dealKey") or "").strip()
     if not key:
         raise HTTPException(400, "dealKey required")
-    actioned = bool(body.get("actioned", True))
+    if "status" in body:
+        status = body.get("status")
+        status = status if status in ("actioning", "actioned") else None
+    else:  # legacy boolean toggle
+        status = "actioning" if bool(body.get("actioned", True)) else None
     row = db.query(DealHighlight).filter(DealHighlight.deal_key == key).first()
-    if actioned:
+    if status:
         if not row:
             row = DealHighlight(deal_key=key)
             db.add(row)
         row.actioned = True
+        row.status = status
         row.actioned_by_id = user.id
         row.actioned_by_name = user.short_name or user.name
         row.actioned_at = _dt.utcnow()
@@ -281,8 +288,8 @@ def highlight_deal(body: dict, db: Session = Depends(get_db), user: User = Depen
     elif row:
         db.delete(row)
     db.commit()
-    return {"ok": True, "actioned": actioned,
-            "actionedBy": (user.short_name or user.name) if actioned else None}
+    return {"ok": True, "status": status, "actioned": bool(status),
+            "actionedBy": (user.short_name or user.name) if status else None}
 
 
 def _safe_weekly(db, target: User) -> dict:

@@ -308,6 +308,8 @@ class DealHighlight(Base):
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     rep_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     actioned: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Stage of the highlight: "actioning" (being worked) → "actioned" (done). Row presence = highlighted.
+    status: Mapped[str] = mapped_column(String(16), default="actioning")
     actioned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     actioned_by_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     actioned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
