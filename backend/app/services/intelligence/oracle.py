@@ -93,6 +93,25 @@ def _insights_digest(db) -> list[dict]:
              "severity": i.severity, "title": i.title} for i in rows]
 
 
+def _forecast_digest(db) -> dict | None:
+    """Team weekly-forecast standing for the Oracle — so managers can ask about reliability,
+    sandbagging, who's behind, etc."""
+    try:
+        from ...modules.forecast import services as _fc
+        ts = _fc.team_summary(db)
+        return {
+            "week": ts["week"], "teamAchievementPct": ts["pct"],
+            "missingForecast": ts["missing"], "behindPace": ts["behind"],
+            "reps": [{"name": s["name"], "reliabilityScore": s["reliabilityScore"],
+                      "weeksTracked": s["weeks"], "hits": s["hitCount"], "thisWeekPct": s["thisWeekPct"],
+                      "summary": s["summary"],
+                      "flags": [k for k in ("chronicMiss", "strong", "sandbagger", "notSubmitted") if s.get(k)]}
+                     for s in ts["signals"]],
+        }
+    except Exception:
+        return None
+
+
 def ask_oracle(db, user: User, question: str, days: int = 60) -> dict:
     if not settings.anthropic_api_key:
         return {"answer": "The Oracle needs the Anthropic API key configured to reason over the data.",
@@ -103,6 +122,7 @@ def ask_oracle(db, user: User, question: str, days: int = 60) -> dict:
         "teamAverages": team_averages(db, days=days),
         "openInsights": _insights_digest(db),
         "knowledge": _knowledge(db),
+        "weeklyForecast": _forecast_digest(db),
         "relevantCalls": calls,
     }
     from ...pipeline.analyzer import _claude

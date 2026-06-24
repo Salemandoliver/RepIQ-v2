@@ -77,7 +77,7 @@ export default function TeamLeague({ days = 30 }) {
                 </div>
               )}
               <table className="hr-doc-table">
-                <thead><tr><th style={{ width: 36 }}>#</th><th>Rep</th><th style={{ textAlign: "right" }}>Quality</th><th style={{ textAlign: "right" }}>Δ</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Calls</th></tr></thead>
+                <thead><tr><th style={{ width: 36 }}>#</th><th>Rep</th><th style={{ textAlign: "right" }}>Quality</th><th style={{ textAlign: "right" }}>Δ</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Calls</th><th style={{ textAlign: "right" }} title="Forecast Reliability Score (rolling 8 weeks)">Forecast</th></tr></thead>
                 <tbody>
                   {reps.map((r, i) => (
                     <tr key={r.userId}>
@@ -92,6 +92,11 @@ export default function TeamLeague({ days = 30 }) {
                       <td style={{ textAlign: "right" }}>{delta(r.deltaQuality)}</td>
                       <td style={{ textAlign: "right" }}>{r.orders}</td>
                       <td style={{ textAlign: "right" }} className="muted">{r.calls}</td>
+                      <td style={{ textAlign: "right" }}>
+                        {r.reliabilityScore != null
+                          ? <b style={{ color: { green: "var(--green)", amber: "var(--amber)", red: "var(--red)" }[r.reliabilityBand] || "var(--text)" }}>{r.reliabilityScore}</b>
+                          : <span className="muted small">{r.reliabilityWeeks ? `${r.reliabilityWeeks}/8` : "—"}</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

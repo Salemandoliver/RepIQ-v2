@@ -8,6 +8,7 @@ import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 import { TrendingUpIcon } from "../components/Icons.jsx";
 import CampaignsPanel from "../components/CampaignsPanel.jsx";
+import WeeklyForecast from "../components/WeeklyForecast.jsx";
 
 const RAG_COLOR = { green: "var(--green)", amber: "var(--amber)", red: "var(--red)", none: "var(--text-faint)" };
 const ragOf = (pct) => (pct == null ? "none" : pct >= 80 ? "green" : pct >= 50 ? "amber" : "red");
@@ -900,7 +901,10 @@ export default function SalesIQ() {
       ) : !meta.salesConfigured ? (
         <div className="card"><EmptyState icon="🔌" title="Sales Tracker not connected" /></div>
       ) : (
-        <RepBody data={data} />
+        <>
+          <WeeklyForecast />
+          <RepBody data={data} />
+        </>
       )}
     </div>
   );

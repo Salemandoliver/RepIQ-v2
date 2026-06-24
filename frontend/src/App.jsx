@@ -43,6 +43,7 @@ import Insights from "./pages/Insights.jsx";
 import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
 import OrderEntry from "./pages/OrderEntry.jsx";
+import ForecastReminder from "./components/ForecastReminder.jsx";
 
 function ProtectedLayout() {
   const location = useLocation();
@@ -65,6 +66,7 @@ function ProtectedLayout() {
           <Outlet context={{ user }} />
         </ErrorBoundary>
       </main>
+      <ForecastReminder />
     </div>
   );
 }

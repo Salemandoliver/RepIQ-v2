@@ -61,6 +61,15 @@ def weekly_payload(db, user: User, role: str) -> dict:
     opportunity = (warm.customer_company or warm.customer_name) if warm else None
 
     mtd = _section_c(db, user, role)
+    forecast = None
+    try:
+        from ...modules.forecast import services as _fc
+        if _fc.is_rep(db, user):
+            s = _fc.rep_signal(db, user)
+            forecast = {"summary": s["summary"], "reliabilityScore": s["reliabilityScore"],
+                        "weeksTracked": s["weeks"], "hits": s["hitCount"], "thisWeekPct": s["thisWeekPct"]}
+    except Exception:
+        pass
     return {
         "weekStart": this_mon.isoformat(),
         "lastWeek": {
@@ -72,6 +81,7 @@ def weekly_payload(db, user: User, role: str) -> dict:
         "topFocus": top_focus[0][0] if top_focus else None,
         "oneThing": one_things[0] if one_things else None,
         "opportunity": opportunity,
+        "forecast": forecast,
         "monthly": mtd,
     }
 
@@ -168,7 +178,20 @@ def review_payload(db, user: User, role: str, asof: date, period: str) -> dict:
         "topFocus": [f for f, _ in top_focus],
         "coachingPoints": one_things[:3],
         "predictor": (last_perf.get("predictor") or {}),
+        "forecast": _forecast_for_review(db, user),
     }
+
+
+def _forecast_for_review(db, user: User) -> dict | None:
+    try:
+        from ...modules.forecast import services as _fc
+        if not _fc.is_rep(db, user):
+            return None
+        s = _fc.rep_signal(db, user)
+        return {"summary": s["summary"], "reliabilityScore": s["reliabilityScore"],
+                "band": s["reliabilityBand"], "weeksTracked": s["weeks"], "hits": s["hitCount"]}
+    except Exception:
+        return None
 
 
 def _review_script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
@@ -191,6 +214,7 @@ def _review_script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         f"RECURRING STRENGTHS: {', '.join(p.get('topStrengths') or []) or 'n/a'}\n"
         f"RECURRING FOCUS AREAS: {', '.join(p.get('topFocus') or []) or 'n/a'}\n"
         f"COACHING THEMES: {', '.join(p.get('coachingPoints') or []) or 'n/a'}\n"
+        f"FORECAST RELIABILITY: {(p.get('forecast') or {}).get('summary') or 'n/a'}\n"
         f"PROJECTION: {p.get('predictor')}"
     )
     system = (
@@ -221,6 +245,8 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
                        f"({m.get('sovPct')}%), {m.get('ordersMTD')} orders, {m.get('daysRemaining')} "
                        f"selling days left; projected finish {((m.get('predictor') or {}).get('projectedFinishPct'))}%.")
     lw = p["lastWeek"]
+    fc = p.get("forecast") or {}
+    fc_line = f"\nWEEKLY FORECAST: {fc.get('summary')}" if fc else ""
     data = (
         f"Rep: {user.name} ({role}). Week beginning {p['weekStart']}.\n"
         f"LAST WEEK: {lw['calls']} conversations (prior week {lw['priorCalls']}); "
@@ -229,7 +255,7 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         f"FOCUS AREA: {p.get('topFocus')}\n"
         f"COACHING POINT: {p.get('oneThing')}\n"
         f"WARM OPPORTUNITY: {p.get('opportunity')}\n"
-        f"{target_line}"
+        f"{target_line}{fc_line}"
     )
     system = (
         "You are Oliver, a warm, motivating sales coach at BT Local Business Oxford & Bucks (UK "
@@ -240,7 +266,9 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         "one number, framed positively; 3) one specific win with evidence; 4) one specific focus "
         "area with a concrete, encouraging coaching tip (exactly ONE — not a list); 5) this "
         "month's target context as opportunity, not pressure; 6) the warm opportunity to chase; "
-        "7) a brief energising close. Only use the data given — invent nothing. "
+        "7) a brief energising close. If WEEKLY FORECAST data is present, weave in their forecast "
+        "reliability — celebrate consistency, or gently encourage hitting the number they committed to. "
+        "Only use the data given — invent nothing. "
         "Return STRICT JSON: {\"title\":\"...\",\"headline\":\"one-line summary\",\"script\":\"the spoken script\"}."
     )
     user_msg = f"Write {name}'s weekly video script from this data:\n\n{data}"

@@ -271,6 +271,26 @@ def _campaign_context(db, user: User, manager: bool) -> str:
     return "\n".join(lines)
 
 
+def _forecast_ask_context(db, user: User, manager: bool) -> str:
+    """Weekly-forecast context for Ask — team standing for managers, the rep's own for reps."""
+    try:
+        from ...modules.forecast import services as fc
+        if manager:
+            ts = fc.team_summary(db)
+            lines = [f"WEEKLY FORECAST ({ts['week']}) — team at {ts['pct']}% of forecast (placed orders)."]
+            if ts["missing"]:
+                lines.append("Not submitted: " + ", ".join(ts["missing"]))
+            if ts["behind"]:
+                lines.append("Behind pace: " + ", ".join(ts["behind"]))
+            lines += ["- " + s["summary"] for s in ts["signals"]]
+            return "\n".join(lines)
+        if fc.is_rep(db, user):
+            return "YOUR WEEKLY FORECAST: " + fc.rep_signal(db, user)["summary"]
+        return ""
+    except Exception:
+        return ""
+
+
 def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
     from ...pipeline.analyzer import _claude
     from ...config import settings
@@ -281,6 +301,7 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         ids = [u.id for u in _team_reps(db, None)] or [user.id]
         calls_ctx = _calls_context(db, ids, start, end, label, limit=70, team=True)
         parts = [_manager_ask_context(command_centre(db, user)), _team_holiday_context(db),
+                 _forecast_ask_context(db, user, manager=True),
                  _campaign_context(db, user, manager=True), calls_ctx]
         context = "\n\n".join(p for p in parts if p)
         system = (
@@ -294,7 +315,8 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         )
         user_msg = f"MANAGER: {user.name} · scope: {label}\n\n{context}\n\nQUESTION: {question}"
     else:
-        parts = [_trackers_context(db, user, role), _campaign_context(db, user, manager=False),
+        parts = [_trackers_context(db, user, role), _forecast_ask_context(db, user, manager=False),
+                 _campaign_context(db, user, manager=False),
                  _calls_context(db, [user.id], start, end, label)]
         context = "\n\n".join(p for p in parts if p)
         system = (

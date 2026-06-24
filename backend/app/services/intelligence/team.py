@@ -323,6 +323,21 @@ def command_centre(db, manager: User, team: str | None = None) -> dict:
     reps = _team_reps(db, team)
     cards = [_rep_card(db, u, asof) for u in reps]
     alerts = _alerts(db, cards, asof)
+    # Weekly-forecast alerts — not entered, and behind pace mid-week (leave-aware via the service).
+    try:
+        from ...modules.forecast import services as _fc
+        fsum = _fc.team_summary(db, team, asof)
+        for nm in fsum.get("missing", []):
+            alerts.append({"severity": "warn", "type": "forecast_missing",
+                           "text": f"{nm} hasn't set this week's forecast.", "rep": nm})
+        for s in fsum.get("signals", []):
+            if s.get("behindPace") and s.get("thisWeekPct") is not None:
+                alerts.append({"userId": s["userId"], "severity": "warn", "type": "forecast_behind",
+                               "rep": s["name"],
+                               "text": f"{s['name']} is behind forecast — {round(s['thisWeekPct'])}% with the week ~{s.get('expectedPct')}% through.",
+                               "detail": s.get("summary")})
+    except Exception:
+        pass
     aggregates = _team_aggregates(db, cards, reps, asof)
     deals = _deals(db, reps, asof)
     try:

@@ -8,6 +8,7 @@ import TeamLeague from "../components/TeamLeague.jsx";
 import CampaignAlerts from "../components/CampaignAlerts.jsx";
 import { InsightsFeed } from "../components/Insights.jsx";
 import OracleAsk from "../components/Oracle.jsx";
+import WeeklyForecastManager from "../components/WeeklyForecastManager.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 
@@ -90,6 +91,8 @@ const ALERT_META = {
   declining: { icon: "📉", bg: "rgba(239,68,68,0.08)", bar: "var(--red)" },
   improving: { icon: "🚀", bg: "rgba(34,197,94,0.10)", bar: "var(--green)" },
   overdue_callbacks: { icon: "⏰", bg: "rgba(245,158,11,0.10)", bar: "var(--amber)" },
+  forecast_missing: { icon: "🎯", bg: "rgba(245,158,11,0.10)", bar: "var(--amber)" },
+  forecast_behind: { icon: "🎯", bg: "rgba(239,68,68,0.08)", bar: "var(--red)" },
 };
 
 function RepScorecard({ userId, onClose }) {
@@ -213,6 +216,9 @@ export default function CommandCentre() {
         <Stat label="Avg quality (yest.)" value={ag.avgQualityYesterday != null ? Math.round(ag.avgQualityYesterday) : "—"} />
         <Stat label="Reps" value={ag.reps} />
       </div>
+
+      {/* Weekly Forecast — team Data/Cloud/Mobile vs placed orders, per-rep + reliability + edit */}
+      <WeeklyForecastManager />
 
       {/* Ask the Oracle — one Ask: operational (this week/month) + cross-team patterns + knowledge library */}
       <OracleAsk />

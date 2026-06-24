@@ -121,7 +121,22 @@ def league(days: int = 30, db: Session = Depends(get_db), user: User = Depends(g
     if not _is_manager(db, user):
         raise HTTPException(403, "Manager view only")
     from ..services.intelligence.benchmarks import league as _league
-    return _league(db, days=max(7, min(120, days)))
+    data = _league(db, days=max(7, min(120, days)))
+    # Forecast-reliability lens — attach each rep's score (BCs don't forecast, so they're skipped).
+    try:
+        from ..modules.forecast import services as _fc
+        for r in data.get("reps", []):
+            if r.get("group") == "business_creators":
+                continue
+            u = db.get(User, r["userId"])
+            if u and _fc.is_rep(db, u):
+                rel = _fc.reliability(db, u)
+                r["reliabilityScore"] = rel.get("score")
+                r["reliabilityBand"] = rel.get("band")
+                r["reliabilityWeeks"] = rel.get("weeks")
+    except Exception:
+        pass
+    return data
 
 
 @router.get("/insights")

@@ -6,6 +6,7 @@ import WeeklyVideo from "../components/WeeklyVideo.jsx";
 import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamCompareCard from "../components/TeamCompareCard.jsx";
 import LiveCampaigns from "../components/LiveCampaigns.jsx";
+import WeeklyForecast from "../components/WeeklyForecast.jsx";
 import { MyFocus } from "../components/Insights.jsx";
 import { useToast } from "../components/Toast.jsx";
 
@@ -246,6 +247,9 @@ export default function MorningDashboard() {
       <div className="card" style={{ background: "linear-gradient(135deg,#3b1d6e,#6d28d9)", color: "#fff", border: "none" }}>
         <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{brief}</div>
       </div>
+
+      {/* Weekly Forecast — rep commits Data/Cloud/Mobile SOV, then tracks against placed orders */}
+      <WeeklyForecast />
 
       <div style={{ marginTop: 16 }}><AskCopilot /></div>
 

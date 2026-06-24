@@ -244,6 +244,63 @@ def _campaign_signals(db, days) -> list[dict]:
     return out
 
 
+def _forecast_signals(db, asof) -> list[dict]:
+    """Weekly-forecast signals — reliability is a first-class performance dimension, so it produces
+    insights like every other facet. Not gated by call count (a rep can owe a forecast regardless)."""
+    out: list[dict] = []
+    try:
+        from ...modules.forecast import services as fc
+    except Exception:
+        return out
+    aod = asof.date() if hasattr(asof, "date") else asof
+    try:
+        reps = fc.eligible_reps(db)
+    except Exception:
+        return out
+    for u in reps:
+        try:
+            sig = fc.rep_signal(db, u, aod)
+        except Exception:
+            continue
+        uid, name = u.id, sig["name"]
+        if sig["notSubmitted"]:
+            out.append(_mk("rep", "process", "medium", "forecast_missing",
+                f"{name} hasn't set this week's forecast",
+                f"No Data/Cloud/Mobile forecast submitted for {sig['week']}.",
+                "Nudge them to commit their weekly forecast — it drives their reliability and the team view.",
+                [], {"week": sig["week"]}, subject_type="user", subject_id=uid, subject_name=name, period_days=7))
+        if sig["chronicMiss"]:
+            out.append(_mk("rep", "risk", "high", "forecast_chronic_miss",
+                f"{name} is consistently missing forecast",
+                f"Hit forecast in only {sig['hitCount']} of the last {sig['weeks']} weeks (reliability {sig['reliabilityScore']}/100).",
+                "1-to-1 on forecasting: over-optimistic, sandbagged, or an activity gap? Agree a realistic, owned number.",
+                [], {"reliability": sig["reliabilityScore"], "hits": sig["hitCount"], "weeks": sig["weeks"]},
+                subject_type="user", subject_id=uid, subject_name=name))
+        elif sig["strong"]:
+            out.append(_mk("rep", "win", "positive", "forecast_reliable",
+                f"{name} is a reliable forecaster",
+                f"Reliability {sig['reliabilityScore']}/100 — hit forecast {sig['hitCount']} of the last {sig['weeks']} weeks.",
+                "Recognise it; have them share how they forecast and pace the week.",
+                [], {"reliability": sig["reliabilityScore"]},
+                subject_type="user", subject_id=uid, subject_name=name))
+        if sig["sandbagger"]:
+            off = 100 - (sig["components"].get("accuracy") or 0)
+            out.append(_mk("rep", "risk", "medium", "forecast_sandbagging",
+                f"{name} may be sandbagging the forecast",
+                f"Hits the number most weeks but lands ~{off}% off it — habitually under-forecasting.",
+                "Coach toward an honest forecast: low-balling then beating it distorts the team view and dents accuracy.",
+                [], {"accuracy": sig["components"].get("accuracy")},
+                subject_type="user", subject_id=uid, subject_name=name))
+        if sig["behindPace"] and sig["thisWeekPct"] is not None:
+            out.append(_mk("rep", "risk", "medium", "forecast_behind_pace",
+                f"{name} is behind forecast this week",
+                f"At {round(sig['thisWeekPct'])}% with the week ~{sig['expectedPct']}% through.",
+                "Check today's plan covers the gap — which warm Data/Cloud/Mobile deals can close it?",
+                [], {"pct": sig["thisWeekPct"], "expected": sig["expectedPct"]},
+                subject_type="user", subject_id=uid, subject_name=name, period_days=7))
+    return out
+
+
 def run_detectors(db, days: int = 30, asof: datetime | None = None) -> list[dict]:
     """Produce all candidate insights for the current window."""
     asof = asof or datetime.utcnow()
@@ -255,6 +312,7 @@ def run_detectors(db, days: int = 30, asof: datetime | None = None) -> list[dict
     out: list[dict] = []
     out += _team_signals(team, days)
     out += _campaign_signals(db, days)
+    out += _forecast_signals(db, asof)
 
     for rep in lg["reps"]:
         uid, name = rep["userId"], rep["name"] or "Rep"

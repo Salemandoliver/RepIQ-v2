@@ -362,6 +362,34 @@ def maybe_weekly_videos(db) -> None:
         log.exception("Monthly/quarterly review pre-generation failed")
 
 
+def maybe_forecast_weekroll(db) -> None:
+    """Early Monday (>= 02:00 UTC): snapshot the just-ended week's forecast vs placed-order actuals
+    into immutable history (``weekly_forecast_results``) — this is what the Forecast Reliability
+    Score reads. Runs once per week, idempotent (guarded by a Setting key)."""
+    now = datetime.utcnow()
+    if now.weekday() != 0 or now.hour < 2:
+        return
+    from datetime import date, timedelta
+    from ..models import Setting
+    from ..modules.forecast import services as fc
+    last = fc.current_week(date.today() - timedelta(days=3))     # any weekday of the prior week
+    wy, wn = last["week_year"], last["number"]
+    key = f"{wy}-{wn}"
+    row = db.get(Setting, "forecast_roll_week")
+    if row and isinstance(row.value, dict) and row.value.get("week") == key:
+        return                                                   # already rolled this week
+    try:
+        fc.close_week(db, wy, wn)
+    except Exception:
+        log.exception("Forecast week-roll failed")
+        return
+    if row:
+        row.value = {"week": key}
+    else:
+        db.add(Setting(key="forecast_roll_week", value={"week": key}))
+    db.commit()
+
+
 # Transient states a call passes through while a worker thread owns it. If the process
 # restarts mid-flight, these are re-queued on startup so no call is left stranded.
 _INPROGRESS = ("processing", "downloading", "transcribing", "analyzing")
@@ -493,6 +521,7 @@ def _ingestion_loop() -> None:
                         _expire_placeholders(db)
                         maybe_weekly_reports(db)
                         maybe_weekly_videos(db)
+                        maybe_forecast_weekroll(db)
                     except Exception:
                         log.exception("housekeeping failed")
             finally:

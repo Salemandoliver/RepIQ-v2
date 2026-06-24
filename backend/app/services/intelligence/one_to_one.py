@@ -44,6 +44,20 @@ def _facts(db, user: User, days: int) -> dict:
               .join(Call, Call.id == CallAnalysis.call_id)
               .filter(Call.host_id == uid, Call.status == "completed")
               .order_by(Call.started_at.desc()).limit(12).all()) if t]
+    # Weekly-forecast standing — reliability is a core performance dimension in every 1-to-1.
+    forecast = None
+    try:
+        from ...modules.forecast import services as _fc
+        if _fc.is_rep(db, user):
+            s = _fc.rep_signal(db, user)
+            forecast = {"summary": s["summary"], "reliabilityScore": s["reliabilityScore"],
+                        "band": s["reliabilityBand"], "weeksTracked": s["weeks"], "hits": s["hitCount"],
+                        "thisWeekPct": s["thisWeekPct"], "behindPace": s["behindPace"],
+                        "components": s["components"],
+                        "flags": [k for k in ("chronicMiss", "strong", "sandbagger", "notSubmitted") if s.get(k)]}
+    except Exception:
+        pass
+
     return {"name": user.short_name or user.name, "insights": ins,
             "metrics": {"calls": ravg.get("calls"), "quality": ravg.get("quality"),
                         "questions": ravg.get("questions"), "talk_ratio": ravg.get("talk_ratio"),
@@ -51,6 +65,7 @@ def _facts(db, user: User, days: int) -> dict:
                         "orders": ravg.get("orders")},
             "team": {"quality": team.get("quality"), "questions": team.get("questions"),
                      "closeRate": team.get("closeRate")},
+            "forecast": forecast,
             "benchmark": bench, "recentCoachingPoints": things, "days": days}
 
 
@@ -80,8 +95,10 @@ def brief(db, user_id: int, days: int = 30) -> dict:
         "You are an experienced sales manager at BT Local Business Oxford & Bucks (UK B2B telecoms) "
         "preparing for a 1-to-1 with one of your reps. Using ONLY the supplied facts, write a warm, "
         "specific, evidence-based prep brief. Lead with genuine positives, be constructive on gaps, and "
-        "give the manager concrete talking points and questions to ask. Keep every number EXACTLY as "
-        "given; never invent figures. UK English. Return STRICT JSON only."
+        "give the manager concrete talking points and questions to ask. Where the facts include a "
+        "'forecast' block, treat weekly-forecast reliability as a key performance dimension — praise "
+        "consistency, address chronic misses or sandbagging, and reference this week's pacing. Keep "
+        "every number EXACTLY as given; never invent figures. UK English. Return STRICT JSON only."
     )
     user_msg = (
         "Facts:\n" + json.dumps(facts, indent=1, default=str) +
