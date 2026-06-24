@@ -4,8 +4,9 @@ import { Avatar, Skeleton } from "./ui.jsx";
 import { useTeamAvatars } from "./useTeamAvatars.js";
 import { useCachedGet } from "../useCachedGet.js";
 
-// Team league table — reps ranked by call quality, with orders and "most improved".
-// Collapsible (default open) + team filters. Operations are excluded server-side. (Roadmap Phase 1.)
+// Team league table — Sales Reps / BCs ranked by call quality, with orders and "most improved".
+// Collapsible (defaults to rolled up) + team filters. Managers and Operations are excluded
+// server-side, so only reps and business creators appear. (Roadmap Phase 1.)
 
 const FILTERS = [
   ["all", "Teams"],
@@ -21,7 +22,7 @@ const mean = (xs) => {
 
 export default function TeamLeague({ days = 30 }) {
   const { data, error: err } = useCachedGet(`/api/intelligence/league?days=${days}`);
-  const [open, setOpen] = useState(true);          // default to full display
+  const [open, setOpen] = useState(false);         // default rolled up
   const [filter, setFilter] = useState("all");
   const avatars = useTeamAvatars();
 

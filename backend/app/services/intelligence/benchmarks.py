@@ -166,7 +166,7 @@ def league(db, days: int = 30, asof: datetime | None = None) -> dict:
     for hid, a in cagg.items():
         u = db.get(User, hid)
         team_name, group, role = _rep_group(db, u)
-        if role is None:           # Operations / non-sales — they don't make sales calls
+        if role is None or role == "manager":   # only Sales Reps / BCs — exclude Operations & managers
             continue
         q = _mean(a["q"])
         pq = _mean(pagg.get(hid, {}).get("q", [])) if hid in pagg else None
