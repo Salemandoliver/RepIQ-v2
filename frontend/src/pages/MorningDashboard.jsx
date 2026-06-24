@@ -92,7 +92,7 @@ function AskCopilot() {
   };
 
   return (
-    <div className="card" style={{ border: "1px solid var(--accent, #6d28d9)" }}>
+    <div className="card ask-card">
       <div className="flex" style={{ gap: 8, fontWeight: 700, fontSize: 15, marginBottom: messages.length ? 12 : 10 }}>
         <span aria-hidden="true">✨</span> Ask RepIQ
         <span className="muted small" style={{ fontWeight: 400 }}>— your day, your calls, your prospects</span>

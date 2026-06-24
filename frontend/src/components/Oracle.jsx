@@ -115,7 +115,7 @@ export default function OracleAsk() {
     : "Operational questions on recent activity — deals to push, who needs help, this period's numbers.";
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
+    <div className="card ask-card" style={{ marginBottom: 16 }}>
       <div className="spread" style={{ cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
         <h3 className="card-title" style={{ margin: 0 }}>🔮 Ask the Oracle</h3>
         <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>{open ? "▲" : "▼"}</button>

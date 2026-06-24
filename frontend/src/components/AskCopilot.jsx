@@ -63,7 +63,7 @@ export default function AskCopilot({ presets, subtitle, title }) {
   };
 
   return (
-    <div className="card" style={{ border: "1px solid var(--accent, #6d28d9)" }}>
+    <div className="card ask-card">
       <div className="flex" style={{ gap: 8, fontWeight: 700, fontSize: 15, marginBottom: messages.length ? 12 : 10 }}>
         <span aria-hidden="true">✨</span> {title || "Ask RepIQ"}
         <span className="muted small" style={{ fontWeight: 400 }}>— {subtitle || "your calls, your prospects, your numbers"}</span>

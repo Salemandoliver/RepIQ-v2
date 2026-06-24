@@ -200,7 +200,7 @@ function AskRepIQ({ callId }) {
   };
 
   return (
-    <div className="card">
+    <div className="card ask-card">
       <button className="ask-toggle spread" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="flex" style={{ gap: 8, fontWeight: 700, fontSize: 15 }}>
           <span aria-hidden="true">✨</span> Ask RepIQ

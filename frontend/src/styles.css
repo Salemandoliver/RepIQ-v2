@@ -350,6 +350,85 @@ mark { background: #fde047; border-radius: 2px; padding: 0 1px; }
 .ask-chip:hover { border-color: var(--accent); color: var(--accent); background: rgba(233, 30, 99, 0.06); }
 .ask-chip:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* ---------- Ask widgets — distinct "intelligence" theme (Ask RepIQ / SalesIQ / Oracle) ----------
+   A dark navy gradient frame in the CompanyIQ family, so the Ask surfaces read as a set and
+   stand apart from the white cards around them. Chrome (title, input bar, chips, segmented
+   control, buttons) is themed for dark; answer / note panels stay light for legibility. */
+.ask-card {
+  background: linear-gradient(180deg, #0d1b2e 0%, #11243d 100%);
+  color: #e7edf5;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 3px solid #b3258b;
+  border-image: var(--accent-grad) 1;
+  box-shadow: 0 12px 32px rgba(13, 27, 46, 0.38);
+}
+.ask-card .card-title,
+.ask-card .ask-toggle,
+.ask-card h3 { color: #fff; }
+.ask-card .ask-chevron { color: #9fb0c4; }
+.ask-card .muted,
+.ask-card .faint,
+.ask-card .small.muted,
+.ask-card .muted.small { color: #9fb0c4; }
+/* text + select input bars */
+.ask-card .input,
+.ask-card select.input,
+.ask-card textarea.input {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #eef3f9;
+}
+.ask-card .input::placeholder { color: rgba(231, 237, 245, 0.45); }
+.ask-card .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.22); }
+.ask-card select.input option { color: #1f2937; }
+/* pill input bar (CallDetail) */
+.ask-card .ask-input-wrap { background: rgba(255, 255, 255, 0.07); border-color: rgba(233, 30, 99, 0.55); }
+.ask-card .ask-input-wrap input { color: #eef3f9; }
+.ask-card .ask-input-wrap input::placeholder { color: rgba(231, 237, 245, 0.45); }
+/* buttons */
+.ask-card .btn-ghost { color: #c7d4e3; }
+.ask-card .btn-ghost:hover { background: rgba(255, 255, 255, 0.10); color: #fff; }
+.ask-card .btn-outline { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.18); color: #eef3f9; }
+.ask-card .btn-outline:hover { background: rgba(255, 255, 255, 0.14); }
+.ask-card .ask-mic { background: rgba(255, 255, 255, 0.10); color: #c7d4e3; }
+.ask-card .ask-mic:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+/* preset / suggestion chips */
+.ask-card .siq-chip,
+.ask-card .ask-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #d3deeb;
+}
+.ask-card .siq-chip:hover,
+.ask-card .ask-chip:hover {
+  background: rgba(233, 30, 99, 0.20);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* segmented control (Oracle mode switch) */
+.ask-card .siq-seg { background: rgba(255, 255, 255, 0.08); }
+.ask-card .siq-seg-btn { color: #c7d4e3; }
+.ask-card .siq-seg-btn.on { background: #fff; color: var(--accent); }
+/* answer / note panels stay light for readability (like CompanyIQ's inner cards) */
+.ask-card .siq-note {
+  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.20);
+}
+.ask-card .siq-note .muted,
+.ask-card .siq-note .small,
+.ask-card .ask-bubble.muted,
+.ask-card .ask-bubble .muted { color: var(--text-soft); }
+.ask-card .siq-note .input,
+.ask-card .siq-note textarea.input {
+  background: #fff; border-color: var(--border); color: var(--text);
+}
+.ask-card .siq-note .input::placeholder { color: var(--text-faint); }
+.ask-card .siq-note .siq-chip {
+  background: rgba(233, 30, 99, 0.10); color: var(--accent); border-color: transparent;
+}
+
 .audio-bar { display: flex; align-items: center; gap: 10px; }
 .audio-range { flex: 1; accent-color: var(--accent); }
 .comment-row { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid #f0f1f3; }
