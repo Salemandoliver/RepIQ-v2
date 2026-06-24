@@ -217,11 +217,11 @@ export default function CommandCentre() {
         <Stat label="Reps" value={ag.reps} />
       </div>
 
-      {/* Weekly Forecast — team Data/Cloud/Mobile vs placed orders, per-rep + reliability + edit */}
-      <WeeklyForecastManager />
-
       {/* Ask the Oracle — one Ask: operational (this week/month) + cross-team patterns + knowledge library */}
       <OracleAsk />
+
+      {/* Weekly Forecast — team Data/Cloud/Mobile vs placed orders, per-rep + reliability + edit */}
+      <WeeklyForecastManager />
 
       {/* The insight engine's prioritised, evidence-bound action list */}
       <InsightsFeed />

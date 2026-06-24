@@ -10,6 +10,7 @@ export default function WeeklyVideo({ userId }) {
   const [v, setV] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
+  const [open, setOpen] = useState(true);   // rolls up only the written briefing; the video stays
 
   const load = () => {
     setLoading(true); setErr(false);
@@ -36,6 +37,8 @@ export default function WeeklyVideo({ userId }) {
   return (
     <div className="card">
       <div className="flex" style={{ gap: 8, marginBottom: 10 }}>
+        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up text" : "Roll down text"} title={open ? "Roll up the written briefing" : "Roll down the written briefing"}
+          onClick={() => setOpen((o) => !o)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
         <span aria-hidden="true">🎬</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{userId ? (v.title || "Weekly performance video") : "Your weekly performance video"}</span>
         <span className="muted small" style={{ marginLeft: "auto" }}>{wk ? `presented by Oliver · week of ${wk}` : "presented by Oliver"}</span>
@@ -45,17 +48,19 @@ export default function WeeklyVideo({ userId }) {
         <video src={v.videoUrl} controls style={{ width: "100%", borderRadius: 10, background: "#000", display: "block", marginBottom: 12 }} />
       )}
 
-      {v.headline && <div style={{ fontWeight: 600, marginBottom: 8 }}>{v.headline}</div>}
-      <div style={{ background: "var(--surface-2, #f3f4f6)", borderRadius: 10, padding: "13px 15px", lineHeight: 1.65, fontSize: 14, whiteSpace: "pre-wrap", maxHeight: "62vh", overflowY: "auto" }}>
-        {v.script || "Your briefing for this week is being prepared."}
-      </div>
-      <div className="muted small" style={{ marginTop: 8 }}>
-        {v.hasVideo ? "Your weekly briefing — watch above or read here."
-          : v.status === "rendering" ? "🎥 The presenter video is rendering — it'll appear above shortly; read the briefing meanwhile."
-          : v.status === "failed" ? "The video couldn't be rendered this week — here's your written briefing."
-          : "Your AI weekly briefing. The presenter-video version appears once video rendering is enabled for your team."}
-      </div>
-      {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Error: {v.error}</div>}
+      {open && (<>
+        {v.headline && <div style={{ fontWeight: 600, marginBottom: 8 }}>{v.headline}</div>}
+        <div style={{ background: "var(--surface-2, #f3f4f6)", borderRadius: 10, padding: "13px 15px", lineHeight: 1.65, fontSize: 14, whiteSpace: "pre-wrap", maxHeight: "62vh", overflowY: "auto" }}>
+          {v.script || "Your briefing for this week is being prepared."}
+        </div>
+        <div className="muted small" style={{ marginTop: 8 }}>
+          {v.hasVideo ? "Your weekly briefing — watch above or read here."
+            : v.status === "rendering" ? "🎥 The presenter video is rendering — it'll appear above shortly; read the briefing meanwhile."
+            : v.status === "failed" ? "The video couldn't be rendered this week — here's your written briefing."
+            : "Your AI weekly briefing. The presenter-video version appears once video rendering is enabled for your team."}
+        </div>
+        {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Error: {v.error}</div>}
+      </>)}
     </div>
   );
 }

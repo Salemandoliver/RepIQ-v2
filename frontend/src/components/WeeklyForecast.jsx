@@ -17,6 +17,7 @@ export default function WeeklyForecast() {
   const { data, loading, setData } = useCachedGet("/api/forecast/me", { ttl: 5 * 60 * 1000 });
   const [form, setForm] = useState({ data: "", cloud: "", mobile: "" });
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(true);
 
   if (loading && !data) return null;
   if (!data || data.isRep === false) return null;       // only Sales Reps see this card
@@ -71,11 +72,14 @@ export default function WeeklyForecast() {
   const pacing = ach.pacing;
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div className="flex" style={{ gap: 8, marginBottom: 12 }}>
+      <div className="flex" style={{ gap: 8, marginBottom: open ? 12 : 0, alignItems: "center" }}>
+        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up" : "Roll down"} title={open ? "Roll up" : "Roll down"}
+          onClick={() => setOpen((v) => !v)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
         <span aria-hidden="true">🎯</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>This week's forecast</span>
         <span className="muted small" style={{ marginLeft: "auto" }}>{data.week} · 🔒 locked</span>
       </div>
+      {open && (<>
       <div className="flex" style={{ gap: 14, flexWrap: "wrap", justifyContent: "space-around", marginBottom: 8 }}>
         <Gauge value={p.overall} label="Overall" sub={`${money(a.total)} / ${money(f.total)}`} size={150} />
         <Gauge value={p.data} label="Data" sub={money(a.data)} />
@@ -95,6 +99,7 @@ export default function WeeklyForecast() {
         <div className="muted small" style={{ marginTop: 6 }}>Sales Tracker not connected — actuals appear once it's linked.</div>
       )}
       <ConsistencyStrip reliability={data.reliability} />
+      </>)}
     </div>
   );
 }

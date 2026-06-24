@@ -7,6 +7,7 @@ import Markdown from "./Markdown.jsx";
    userId omitted = the signed-in rep's own; userId set = a manager viewing that person's. */
 export default function ReviewVideo({ userId, reloadKey }) {
   const [v, setV] = useState(null);
+  const [open, setOpen] = useState(true);   // rolls up only the written review; the video stays
   useEffect(() => {
     const path = userId ? `/api/intelligence/video/review?user_id=${userId}` : "/api/intelligence/video/review";
     api.get(path).then((d) => setV(d)).catch(() => {});
@@ -17,6 +18,8 @@ export default function ReviewVideo({ userId, reloadKey }) {
   return (
     <div className="card" style={{ borderTop: "3px solid var(--accent)", marginBottom: 16 }}>
       <div className="flex" style={{ gap: 8, marginBottom: 10, alignItems: "center" }}>
+        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up text" : "Roll down text"} title={open ? "Roll up the written review" : "Roll down the written review"}
+          onClick={() => setOpen((o) => !o)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
         <span aria-hidden="true">🏆</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{userId ? (v.title || label) : `Your ${label.toLowerCase()}`}</span>
         <span className="siq-chip" style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", borderColor: "var(--accent)" }}>{label}</span>
@@ -27,17 +30,19 @@ export default function ReviewVideo({ userId, reloadKey }) {
         <video src={v.videoUrl} controls style={{ width: "100%", borderRadius: 10, background: "#000", display: "block", marginBottom: 12 }} />
       )}
 
-      {v.headline && <div style={{ fontWeight: 600, marginBottom: 8 }}>{v.headline}</div>}
-      <div style={{ background: "var(--surface-2, #f3f4f6)", borderRadius: 10, padding: "13px 15px", maxHeight: "60vh", overflowY: "auto" }}>
-        <Markdown text={v.script || "Your review is being prepared."} />
-      </div>
-      <div className="muted small" style={{ marginTop: 8 }}>
-        {v.hasVideo ? "Your performance review from Gary — watch above or read here."
-          : v.status === "rendering" ? "🎥 Gary's review video is rendering — it'll appear above shortly; read it meanwhile."
-          : v.status === "failed" ? "The review video couldn't be rendered — here's the written review."
-          : "Gary's written performance review. The presenter-video version appears once HeyGen rendering is enabled."}
-      </div>
-      {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Note: {v.error}</div>}
+      {open && (<>
+        {v.headline && <div style={{ fontWeight: 600, marginBottom: 8 }}>{v.headline}</div>}
+        <div style={{ background: "var(--surface-2, #f3f4f6)", borderRadius: 10, padding: "13px 15px", maxHeight: "60vh", overflowY: "auto" }}>
+          <Markdown text={v.script || "Your review is being prepared."} />
+        </div>
+        <div className="muted small" style={{ marginTop: 8 }}>
+          {v.hasVideo ? "Your performance review from Gary — watch above or read here."
+            : v.status === "rendering" ? "🎥 Gary's review video is rendering — it'll appear above shortly; read it meanwhile."
+            : v.status === "failed" ? "The review video couldn't be rendered — here's the written review."
+            : "Gary's written performance review. The presenter-video version appears once HeyGen rendering is enabled."}
+        </div>
+        {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Note: {v.error}</div>}
+      </>)}
     </div>
   );
 }

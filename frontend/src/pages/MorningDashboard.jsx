@@ -7,6 +7,7 @@ import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamCompareCard from "../components/TeamCompareCard.jsx";
 import LiveCampaigns from "../components/LiveCampaigns.jsx";
 import WeeklyForecast from "../components/WeeklyForecast.jsx";
+import { Gauge, KpiTile } from "../components/Dashboard.jsx";
 import { MyFocus } from "../components/Insights.jsx";
 import { useToast } from "../components/Toast.jsx";
 
@@ -248,10 +249,10 @@ export default function MorningDashboard() {
         <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{brief}</div>
       </div>
 
+      <div style={{ marginTop: 16 }}><AskCopilot /></div>
+
       {/* Weekly Forecast — rep commits Data/Cloud/Mobile SOV, then tracks against placed orders */}
       <WeeklyForecast />
-
-      <div style={{ marginTop: 16 }}><AskCopilot /></div>
 
       <MyFocus />
 
@@ -313,24 +314,27 @@ export default function MorningDashboard() {
       {m && !m.unavailable && (
         <Section icon="📈" title="Your month" count={m.salesMonthLabel || ""}>
           {m.type === "bc" ? (
-            <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
-              <Stat label="Leads" value={`${m.leadsMTD ?? "—"} / ${m.leadTarget ?? "—"}`} color={ragColor(m.rag)} />
-              <Stat label="F2F leads" value={m.f2f ?? "—"} />
-              <Stat label="GM" value={gbp(m.gmGenerated)} />
-              <Stat label="Orders signed" value={m.ordersSigned ?? "—"} color={m.ordersSigned ? "var(--green)" : null} />
-              <Stat label="Days left" value={m.daysRemaining ?? "—"} sub={m.leaveDays > 0 ? `−${m.leaveDays} leave` : null} />
-              <Stat label="To target" value={m.leadPct != null ? `${m.leadPct}%` : "—"} color={ragColor(m.rag)} />
+            <div className="flex" style={{ gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+              <Gauge value={m.leadPct} label="To target" sub={`${m.leadsMTD ?? "—"} / ${m.leadTarget ?? "—"} leads`} color={ragColor(m.rag)} size={132} />
+              <div className="flex" style={{ gap: 12, flexWrap: "wrap", flex: 1, minWidth: 200 }}>
+                <KpiTile label="GM" value={gbp(m.gmGenerated)} style={{ flex: "1 1 110px" }} />
+                <KpiTile label="F2F leads" value={m.f2f ?? "—"} style={{ flex: "1 1 110px" }} />
+                <KpiTile label="Orders signed" value={m.ordersSigned ?? "—"} accent={m.ordersSigned ? "var(--green)" : undefined} style={{ flex: "1 1 110px" }} />
+                <KpiTile label="Days left" value={m.daysRemaining ?? "—"} sub={m.leaveDays > 0 ? `−${m.leaveDays} leave` : null} style={{ flex: "1 1 110px" }} />
+              </div>
             </div>
           ) : (
             <>
-              <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
-                <Stat label="Data SOV" value={gbp(m.dataSov)} />
-                <Stat label="Cloud SOV" value={gbp(m.cloudSov)} />
-                <Stat label="Mobile SOV" value={gbp(m.mobileSov)} />
-                <Stat label="GM" value={gbp(m.gmMTD)} />
-                <Stat label="Orders" value={m.ordersMTD ?? "—"} />
-                <Stat label="Days left" value={m.daysRemaining ?? "—"} sub={m.leaveDays > 0 ? `−${m.leaveDays} leave` : null} />
-                <Stat label="Pending" value={m.pendingCount ?? "—"} sub={m.pendingSov ? gbp(m.pendingSov) : null} color={m.pendingCount ? "var(--amber)" : null} />
+              <div className="flex" style={{ gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
+                <Gauge value={m.predictor?.projectedFinishPct} label="Projected finish" sub="of monthly target" color={ragColor(m.predictor?.rag)} size={132} />
+                <div className="flex" style={{ gap: 12, flexWrap: "wrap", flex: 1, minWidth: 200 }}>
+                  <KpiTile label="Data SOV" value={gbp(m.dataSov)} style={{ flex: "1 1 110px" }} />
+                  <KpiTile label="Cloud SOV" value={gbp(m.cloudSov)} style={{ flex: "1 1 110px" }} />
+                  <KpiTile label="Mobile SOV" value={gbp(m.mobileSov)} style={{ flex: "1 1 110px" }} />
+                  <KpiTile label="GM" value={gbp(m.gmMTD)} style={{ flex: "1 1 110px" }} />
+                  <KpiTile label="Orders" value={m.ordersMTD ?? "—"} style={{ flex: "1 1 110px" }} />
+                  <KpiTile label="Pending" value={m.pendingCount ?? "—"} sub={m.pendingSov ? gbp(m.pendingSov) : null} accent={m.pendingCount ? "var(--amber)" : undefined} style={{ flex: "1 1 110px" }} />
+                </div>
               </div>
               {m.predictor?.projectedFinishPct != null && (
                 <div className="small" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: m.predictor.rag === "green" ? "rgba(34,197,94,0.1)" : m.predictor.rag === "amber" ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)" }}>
