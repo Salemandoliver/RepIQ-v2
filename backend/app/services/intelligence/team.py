@@ -260,6 +260,24 @@ def _deals(db, reps: list[User], asof: date) -> list[dict]:
     for d in deals:
         d.pop("_score", None)
     deals = deals[:12]
+    call_ids = [d["callId"] for d in deals]
+    # Products discussed on the call (its detected topics) — shown as chips, like the recordings list.
+    if call_ids:
+        from ...models import CallTopic, Topic
+        tmap = {t.id: {"name": t.name, "color": t.color} for t in db.query(Topic).all()}
+        by_call: dict = {}
+        for ct in (db.query(CallTopic).filter(CallTopic.call_id.in_(call_ids))
+                   .order_by(CallTopic.mentions.desc()).all()):
+            t = tmap.get(ct.topic_id)
+            if t:
+                by_call.setdefault(ct.call_id, []).append(t)
+        for d in deals:
+            seen, prods = set(), []
+            for t in by_call.get(d["callId"], []):
+                if t["name"] not in seen:
+                    seen.add(t["name"])
+                    prods.append(t)
+            d["products"] = prods[:4]
     # Attach the persisted "Being Actioned — {manager}" highlights (visible to every manager).
     keys = [d["dealKey"] for d in deals]
     if keys:

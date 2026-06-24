@@ -240,6 +240,15 @@ export default function CommandCentre() {
                     <strong>{d.company}</strong> — {d.rep}{d.ageDays > 0 ? ` · ${d.ageDays}d ago` : ""}
                   </div>
                   <div className="muted small" style={{ marginTop: 3, lineHeight: 1.5 }}>{d.action}{d.proposal ? `: ${d.proposal}` : ""}</div>
+                  {d.products?.length > 0 && (
+                    <div className="flex" style={{ flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+                      {d.products.map((p, pi) => (
+                        <span key={pi} className="chip" style={{ fontSize: 11 }}>
+                          <span className="dot" style={{ background: p.color, width: 7, height: 7 }} />{p.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {actioned && <div className="small" style={{ marginTop: 4, color: "var(--green)", fontWeight: 600 }}>✓ Being actioned{actionedBy ? ` — ${actionedBy}` : ""}</div>}
                 </div>
                 <div className="flex" style={{ gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
