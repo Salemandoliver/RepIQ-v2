@@ -40,6 +40,12 @@ const EMPTY_FILTERS = {
 
 const PAGE_SIZE = 16;
 
+// Module-scope memory so leaving the Recordings list to listen to a call and coming back restores the
+// exact view (filters, page, sort) AND the already-loaded results instantly — no reload, no jump to
+// page 1. Survives client-side navigation; cleared only on a full page reload.
+const LIST_CACHE = new Map();   // query string -> API response
+let LIB_VIEW = null;            // { filters, page, sort }
+
 const PERIOD_PRESETS = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
@@ -311,18 +317,27 @@ export default function Library() {
   const navigate = useNavigate();
   const toast = useToast();
   const [searchParams] = useSearchParams();
-  const [filters, setFilters] = useState(() => {
-    const f = { ...EMPTY_FILTERS };
+  // Restore the saved view when returning to this page — unless the URL carries a fresh intent
+  // (e.g. a "view this customer's calls" link), which always wins.
+  const initRef = useRef(null);
+  if (!initRef.current) {
     const customer = searchParams.get("customer");
     const q = searchParams.get("q") || searchParams.get("transcript");
-    if (customer) f.customer = customer;
-    if (q) f.transcript = q;
-    return f;
-  });
-  const [page, setPage] = useState(1);
-  const [sort, setSort] = useState("recent");
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+    if (!customer && !q && LIB_VIEW) {
+      initRef.current = { filters: LIB_VIEW.filters, page: LIB_VIEW.page, sort: LIB_VIEW.sort };
+    } else {
+      const f = { ...EMPTY_FILTERS };
+      if (customer) f.customer = customer;
+      if (q) f.transcript = q;
+      initRef.current = { filters: f, page: 1, sort: "recent" };
+    }
+  }
+  const [filters, setFilters] = useState(initRef.current.filters);
+  const [page, setPage] = useState(initRef.current.page);
+  const [sort, setSort] = useState(initRef.current.sort);
+  const initData = LIST_CACHE.get(buildQuery(initRef.current.filters, initRef.current.page, initRef.current.sort)) || null;
+  const [data, setData] = useState(initData);
+  const [loading, setLoading] = useState(!initData);
   const [teams, setTeams] = useState([]);
   const [hosts, setHosts] = useState([]);
   const [topics, setTopics] = useState([]);
@@ -379,20 +394,30 @@ export default function Library() {
     return () => document.removeEventListener("mousedown", close);
   }, [savedOpen]);
 
-  // fetch calls (debounced for text inputs)
+  // Remember the current view so returning to this page restores it (filters + page + sort).
+  useEffect(() => { LIB_VIEW = { filters, page, sort }; }, [filters, page, sort]);
+
+  // fetch calls — serve any cached page instantly (so paging back/forth and returning from a call are
+  // immediate), then quietly revalidate. Text inputs are debounced.
   useEffect(() => {
-    setLoading(true);
+    const q = buildQuery(filters, page, sort);
+    const cached = LIST_CACHE.get(q);
+    if (cached) { setData(cached); setLoading(false); }
+    else setLoading(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       api
-        .get(`/api/calls?${buildQuery(filters, page, sort)}`)
-        .then((d) => setData(d))
+        .get(`/api/calls?${q}`)
+        .then((d) => {
+          LIST_CACHE.set(q, d);
+          if (LIST_CACHE.size > 40) LIST_CACHE.delete(LIST_CACHE.keys().next().value);
+          setData(d);
+        })
         .catch((e) => {
-          toast(e.message, "error");
-          setData({ items: [], total: 0 });
+          if (!cached) { toast(e.message, "error"); setData({ items: [], total: 0 }); }
         })
         .finally(() => setLoading(false));
-    }, 300);
+    }, cached ? 800 : 300);
     return () => clearTimeout(debounceRef.current);
   }, [filters, page, sort]);
 

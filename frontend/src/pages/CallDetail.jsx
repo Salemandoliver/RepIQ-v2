@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useOutletContext, useSearchParams, Link } from "react-router-dom";
+import { useParams, useOutletContext, useSearchParams, Link, useNavigate } from "react-router-dom";
 import api, { fetchBlobUrl } from "../api";
 import { useToast } from "../components/Toast.jsx";
 import { Avatar, ScoreChip, Spinner, EmptyState, Modal } from "../components/ui.jsx";
@@ -413,6 +413,7 @@ function MetricBar({ label, value, display, max = 100, suffix = "" }) {
 
 export default function CallDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useOutletContext();
   const [searchParams] = useSearchParams();
   const toast = useToast();
@@ -577,6 +578,9 @@ export default function CallDetail() {
 
   return (
     <div className="page">
+      <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)} style={{ marginBottom: 12 }}>
+        ← Back to recordings
+      </button>
       {/* header */}
       <div className="card spread" style={{ marginBottom: 20, flexWrap: "wrap", gap: 14 }}>
         <div className="flex" style={{ gap: 14 }}>
