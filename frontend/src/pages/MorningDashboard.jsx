@@ -7,6 +7,7 @@ import ReviewVideo from "../components/ReviewVideo.jsx";
 import TeamCompareCard from "../components/TeamCompareCard.jsx";
 import LiveCampaigns from "../components/LiveCampaigns.jsx";
 import WeeklyForecast from "../components/WeeklyForecast.jsx";
+import { ReflectionNudge } from "../components/ReflectionLauncher.jsx";
 import { Gauge, KpiTile } from "../components/Dashboard.jsx";
 import { MyFocus } from "../components/Insights.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -253,6 +254,9 @@ export default function MorningDashboard() {
 
       {/* Weekly Forecast — rep commits Data/Cloud/Mobile SOV, then tracks against placed orders */}
       <WeeklyForecast />
+
+      {/* Nudge to reflect on a fresh weekly/monthly review (voice + text chat with the presenter) */}
+      <ReflectionNudge />
 
       <MyFocus />
 

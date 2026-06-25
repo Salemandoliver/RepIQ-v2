@@ -112,6 +112,25 @@ def _forecast_digest(db) -> dict | None:
         return None
 
 
+def _reflection_digest(db) -> dict | None:
+    """Team review-reflection standing for the Oracle — so managers can ask what reps are saying
+    blocks them, which commitments are slipping, what themes are recurring."""
+    try:
+        from ...modules.reflections import services as rf
+        ts = rf.team_reflection_summary(db)
+        return {
+            "notReflected": ts.get("notReflected"),
+            "blockersForHelp": ts.get("blockersForHelp"),
+            "themes": ts.get("topThemes"),
+            "reps": [{"name": s["name"], "summary": s.get("summary"),
+                      "openCommitments": s.get("openCommitments"), "engagement": s.get("engagement"),
+                      "flags": [k for k, v in (s.get("flags") or {}).items() if v]}
+                     for s in ts.get("signals", [])],
+        }
+    except Exception:
+        return None
+
+
 def ask_oracle(db, user: User, question: str, days: int = 60) -> dict:
     if not settings.anthropic_api_key:
         return {"answer": "The Oracle needs the Anthropic API key configured to reason over the data.",
@@ -123,6 +142,7 @@ def ask_oracle(db, user: User, question: str, days: int = 60) -> dict:
         "openInsights": _insights_digest(db),
         "knowledge": _knowledge(db),
         "weeklyForecast": _forecast_digest(db),
+        "reviewReflections": _reflection_digest(db),
         "relevantCalls": calls,
     }
     from ...pipeline.analyzer import _claude

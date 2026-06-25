@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
-import { Skeleton } from "./ui.jsx";
+import { Skeleton, Chevron } from "./ui.jsx";
 import Markdown from "./Markdown.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 
@@ -141,9 +141,11 @@ export default function OracleAsk() {
 
   return (
     <div className="card ask-card" style={{ marginBottom: 16 }}>
-      <div className="spread" style={{ cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
-        <h3 className="card-title" style={{ margin: 0 }}>🔮 Ask the Oracle</h3>
-        <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>{open ? "▲" : "▼"}</button>
+      <div className="spread" style={{ cursor: "pointer" }} onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
+        <div className="flex" style={{ gap: 8, alignItems: "center" }}>
+          <Chevron open={open} style={{ color: "#9fb0c4" }} />
+          <h3 className="card-title" style={{ margin: 0 }}>🔮 Ask the Oracle</h3>
+        </div>
       </div>
       {open && (
         <>

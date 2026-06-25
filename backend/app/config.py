@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     heygen_voice_id: str = "2d5b0e6cf36f460aa7fc47e3eee4ba54"  # a HeyGen stock voice (override in env)
     heygen_review_avatar_id: str = ""   # Gary's avatar for monthly/quarterly reviews (falls back to heygen_avatar_id)
     heygen_review_voice_id: str = ""    # Gary's voice for monthly/quarterly reviews (falls back to heygen_voice_id)
+    # Review-reflection spoken replies (ElevenLabs streaming TTS). Optional — if unset, the frontend
+    # falls back to the browser's built-in speech synthesis. Presenter voices: Oliver (weekly) / Gary.
+    elevenlabs_api_key: str = ""
+    elevenlabs_model_id: str = "eleven_turbo_v2_5"
+    elevenlabs_oliver_voice_id: str = ""
+    elevenlabs_gary_voice_id: str = ""
     # Only RENDER HeyGen videos (which cost credits) for users whose team name contains one of
     # these comma-separated substrings; empty = everyone. Phased rollout — start with Volume.
     video_teams: str = "volume"

@@ -28,6 +28,16 @@ def _gbp(n) -> str:
     return "£0" if not n else "£" + format(int(round(n)), ",")
 
 
+def _reflection_commitments(db, user: User) -> list:
+    """The rep's commitments from their most recent completed review reflection — so the next video
+    can acknowledge how they're tracking, closing the coaching loop."""
+    try:
+        from ...modules.reflections import services as _rf
+        return _rf.reflection_signal(db, user).get("openCommitments") or []
+    except Exception:
+        return []
+
+
 def weekly_payload(db, user: User, role: str) -> dict:
     """Compile last week's performance for the script."""
     asof = date.today()
@@ -72,6 +82,7 @@ def weekly_payload(db, user: User, role: str) -> dict:
         pass
     return {
         "weekStart": this_mon.isoformat(),
+        "reflectionCommitments": _reflection_commitments(db, user),
         "lastWeek": {
             "calls": agg["calls"], "priorCalls": pagg["calls"],
             "quality": agg["quality"], "priorQuality": pagg["quality"],
@@ -179,6 +190,7 @@ def review_payload(db, user: User, role: str, asof: date, period: str) -> dict:
         "coachingPoints": one_things[:3],
         "predictor": (last_perf.get("predictor") or {}),
         "forecast": _forecast_for_review(db, user),
+        "reflectionCommitments": _reflection_commitments(db, user),
     }
 
 
@@ -215,6 +227,7 @@ def _review_script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         f"RECURRING FOCUS AREAS: {', '.join(p.get('topFocus') or []) or 'n/a'}\n"
         f"COACHING THEMES: {', '.join(p.get('coachingPoints') or []) or 'n/a'}\n"
         f"FORECAST RELIABILITY: {(p.get('forecast') or {}).get('summary') or 'n/a'}\n"
+        f"THEIR LAST REFLECTION COMMITMENTS: {'; '.join(p.get('reflectionCommitments') or []) or 'n/a'}\n"
         f"PROJECTION: {p.get('predictor')}"
     )
     system = (
@@ -227,7 +240,8 @@ def _review_script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         "studied their period and believes in them. Never punishing. UK English, second person. "
         "~120–170 words. Structure: greet by first name; the headline pattern (insight, not a number); "
         "why it's happening; the ONE thing to change; a motivating, forward-looking close into the new "
-        + period + ". Only use the data given — invent nothing. "
+        + period + ". If THEIR LAST REFLECTION COMMITMENTS are present, acknowledge whether they "
+        "followed through — it shows you heard what they committed to. Only use the data given — invent nothing. "
         "Return STRICT JSON: {\"title\":\"...\",\"headline\":\"one-line summary\",\"script\":\"the spoken script\"}."
     )
     user_msg = f"Write {name}'s {period} review script from this data:\n\n{data}"
@@ -247,6 +261,8 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
     lw = p["lastWeek"]
     fc = p.get("forecast") or {}
     fc_line = f"\nWEEKLY FORECAST: {fc.get('summary')}" if fc else ""
+    rc = p.get("reflectionCommitments") or []
+    rc_line = ("\nTHEIR LAST REFLECTION COMMITMENTS: " + "; ".join(rc)) if rc else ""
     data = (
         f"Rep: {user.name} ({role}). Week beginning {p['weekStart']}.\n"
         f"LAST WEEK: {lw['calls']} conversations (prior week {lw['priorCalls']}); "
@@ -255,7 +271,7 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         f"FOCUS AREA: {p.get('topFocus')}\n"
         f"COACHING POINT: {p.get('oneThing')}\n"
         f"WARM OPPORTUNITY: {p.get('opportunity')}\n"
-        f"{target_line}{fc_line}"
+        f"{target_line}{fc_line}{rc_line}"
     )
     system = (
         "You are Oliver, a warm, motivating sales coach at BT Local Business Oxford & Bucks (UK "
@@ -268,7 +284,8 @@ def _script_prompt(user: User, role: str, p: dict) -> tuple[str, str]:
         "month's target context as opportunity, not pressure; 6) the warm opportunity to chase; "
         "7) a brief energising close. If WEEKLY FORECAST data is present, weave in their forecast "
         "reliability — celebrate consistency, or gently encourage hitting the number they committed to. "
-        "Only use the data given — invent nothing. "
+        "If THEIR LAST REFLECTION COMMITMENTS are present, briefly and warmly acknowledge them — it "
+        "shows you listened to what they said they'd do. Only use the data given — invent nothing. "
         "Return STRICT JSON: {\"title\":\"...\",\"headline\":\"one-line summary\",\"script\":\"the spoken script\"}."
     )
     user_msg = f"Write {name}'s weekly video script from this data:\n\n{data}"

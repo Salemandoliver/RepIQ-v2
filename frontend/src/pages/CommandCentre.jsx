@@ -9,6 +9,7 @@ import CampaignAlerts from "../components/CampaignAlerts.jsx";
 import { InsightsFeed } from "../components/Insights.jsx";
 import OracleAsk from "../components/Oracle.jsx";
 import WeeklyForecastManager from "../components/WeeklyForecastManager.jsx";
+import ReflectionsManager from "../components/ReflectionsManager.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 
@@ -93,6 +94,8 @@ const ALERT_META = {
   overdue_callbacks: { icon: "⏰", bg: "rgba(245,158,11,0.10)", bar: "var(--amber)" },
   forecast_missing: { icon: "🎯", bg: "rgba(245,158,11,0.10)", bar: "var(--amber)" },
   forecast_behind: { icon: "🎯", bg: "rgba(239,68,68,0.08)", bar: "var(--red)" },
+  reflection_missing: { icon: "💬", bg: "rgba(109,40,217,0.08)", bar: "var(--accent)" },
+  reflection_blocker: { icon: "🪻", bg: "rgba(245,158,11,0.10)", bar: "var(--amber)" },
 };
 
 function RepScorecard({ userId, onClose }) {
@@ -222,6 +225,9 @@ export default function CommandCentre() {
 
       {/* Weekly Forecast — team Data/Cloud/Mobile vs placed orders, per-rep + reliability + edit */}
       <WeeklyForecastManager />
+
+      {/* Review Reflections — who's reflected, blockers needing help, themes, per-rep + transcripts */}
+      <ReflectionsManager />
 
       {/* The insight engine's prioritised, evidence-bound action list */}
       <InsightsFeed />

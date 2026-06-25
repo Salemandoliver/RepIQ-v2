@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 import Markdown from "./Markdown.jsx";
+import { Chevron } from "./ui.jsx";
+import ReflectionLauncher from "./ReflectionLauncher.jsx";
 
 /* Monthly / quarterly intelligent performance REVIEW, presented by Gary. Renders nothing unless a
    review exists for the period (so it only appears from the first Monday of the month onward).
@@ -17,9 +19,9 @@ export default function ReviewVideo({ userId, reloadKey }) {
   const label = v.type === "quarterly_review" ? "Quarterly review" : "Monthly review";
   return (
     <div className="card" style={{ borderTop: "3px solid var(--accent)", marginBottom: 16 }}>
-      <div className="flex" style={{ gap: 8, marginBottom: 10, alignItems: "center" }}>
-        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up text" : "Roll down text"} title={open ? "Roll up the written review" : "Roll down the written review"}
-          onClick={() => setOpen((o) => !o)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
+      <div className="flex" style={{ gap: 8, marginBottom: 10, alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((o) => !o)} role="button" aria-expanded={open} title="Roll the written review up or down (the video stays)">
+        <Chevron open={open} />
         <span aria-hidden="true">🏆</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{userId ? (v.title || label) : `Your ${label.toLowerCase()}`}</span>
         <span className="siq-chip" style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", borderColor: "var(--accent)" }}>{label}</span>
@@ -43,6 +45,7 @@ export default function ReviewVideo({ userId, reloadKey }) {
         </div>
         {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Note: {v.error}</div>}
       </>)}
+      {!userId && v.id && <ReflectionLauncher videoId={v.id} presenter="Gary" />}
     </div>
   );
 }

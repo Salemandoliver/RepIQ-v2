@@ -20,6 +20,7 @@ from .modules import catalog as _catalog_module   # noqa: F401  registers produc
 from .modules import campaigns as _campaigns_module  # noqa: F401  registers Campaigns (promotions + incentives)
 from .modules import orders as _orders_module        # noqa: F401  registers Order Entry (orders + commission + Schedule 5)
 from .modules import forecast as _forecast_module     # noqa: F401  registers Weekly Forecast + its tables
+from .modules import reflections as _reflections_module  # noqa: F401  registers Review Reflections + its tables
 
 logging.basicConfig(level=logging.INFO)
 

@@ -301,6 +301,56 @@ def _forecast_signals(db, asof) -> list[dict]:
     return out
 
 
+def _reflection_signals(db) -> list[dict]:
+    """Review-reflection signals — the rep's own words become coaching insights: blockers needing
+    help, slipping commitments, self-awareness gaps, growth mindset, disengagement."""
+    out: list[dict] = []
+    try:
+        from ...modules.reflections import services as rf
+        from ...modules.forecast.services import eligible_reps
+        reps = eligible_reps(db)
+    except Exception:
+        return out
+    for u in reps:
+        try:
+            sig = rf.reflection_signal(db, u)
+        except Exception:
+            continue
+        uid, name, f = u.id, sig["name"], sig.get("flags", {})
+        if f.get("blockerFlagged"):
+            bl = (sig.get("blockersNeedingHelp") or [None])[0]
+            out.append(_mk("rep", "risk", "high", "reflection_blocker",
+                f"{name} flagged a blocker and wants help",
+                f"In their review reflection: {bl}." if bl else "They flagged a blocker needing manager support.",
+                "Pick this up directly — unblocking it is the fastest win you can give them.",
+                [], {}, subject_type="user", subject_id=uid, subject_name=name, period_days=14))
+        if f.get("commitmentSlipping"):
+            out.append(_mk("rep", "risk", "medium", "reflection_commitment_slipping",
+                f"{name} isn't following through on their commitments",
+                f"Reflection commitments are mostly not being met (follow-through {sig.get('followThrough')}%).",
+                "Revisit the commitments together — are they realistic and owned? Make the next one small and measurable.",
+                [], {"followThrough": sig.get("followThrough")}, subject_type="user", subject_id=uid, subject_name=name))
+        if f.get("lowSelfAwareness"):
+            out.append(_mk("rep", "skill_gap", "medium", "reflection_self_awareness",
+                f"{name}'s self-view doesn't match the data",
+                "Their reflection reads the period differently to what the numbers show.",
+                "Coach on self-awareness: review one call or figure together so their read calibrates.",
+                [], {}, subject_type="user", subject_id=uid, subject_name=name))
+        if f.get("growthMindset"):
+            out.append(_mk("rep", "win", "positive", "reflection_growth",
+                f"{name} is reflecting with a strong growth mindset",
+                "They engaged openly with their review and are owning their improvement.",
+                "Recognise it — and ask them to share their approach with the team.",
+                [], {}, subject_type="user", subject_id=uid, subject_name=name))
+        elif f.get("disengaged"):
+            out.append(_mk("rep", "risk", "medium", "reflection_disengaged",
+                f"{name} seems disengaged from their development",
+                "Their last review reflection was brief and low-engagement.",
+                "A supportive check-in: what would make the reviews genuinely useful to them?",
+                [], {}, subject_type="user", subject_id=uid, subject_name=name))
+    return out
+
+
 def run_detectors(db, days: int = 30, asof: datetime | None = None) -> list[dict]:
     """Produce all candidate insights for the current window."""
     asof = asof or datetime.utcnow()
@@ -313,6 +363,7 @@ def run_detectors(db, days: int = 30, asof: datetime | None = None) -> list[dict
     out += _team_signals(team, days)
     out += _campaign_signals(db, days)
     out += _forecast_signals(db, asof)
+    out += _reflection_signals(db)
 
     for rep in lg["reps"]:
         uid, name = rep["userId"], rep["name"] or "Rep"

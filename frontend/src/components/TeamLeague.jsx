@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Avatar, Skeleton } from "./ui.jsx";
+import { Avatar, Skeleton, Chevron } from "./ui.jsx";
 import { useTeamAvatars } from "./useTeamAvatars.js";
 import { useCachedGet } from "../useCachedGet.js";
 
@@ -50,13 +50,12 @@ export default function TeamLeague({ days = 30 }) {
 
   return (
     <div className="card">
-      <div className="spread" style={{ marginBottom: open ? 8 : 0, cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
-        <h3 className="card-title" style={{ margin: 0 }}>🏆 Team league</h3>
-        <div className="flex" style={{ gap: 10, alignItems: "center" }}>
-          <span className="muted small">last {data.days} days · avg quality {teamAvg ?? "—"}</span>
-          <button className="btn btn-ghost btn-sm" aria-label={open ? "Collapse" : "Expand"}
-            onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>{open ? "▲" : "▼"}</button>
+      <div className="spread" style={{ marginBottom: open ? 8 : 0, cursor: "pointer" }} onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
+        <div className="flex" style={{ gap: 8, alignItems: "center" }}>
+          <Chevron open={open} />
+          <h3 className="card-title" style={{ margin: 0 }}>🏆 Team league</h3>
         </div>
+        <span className="muted small">last {data.days} days · avg quality {teamAvg ?? "—"}</span>
       </div>
 
       {open && (

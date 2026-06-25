@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Cell, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import api from "../api";
 import { useToast } from "../components/Toast.jsx";
-import { Skeleton, EmptyState, Modal, CollapsibleCard } from "../components/ui.jsx";
+import { Skeleton, EmptyState, Modal, CollapsibleCard, Chevron } from "../components/ui.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 import { formatDuration } from "../utils";
 import { TrendingUpIcon } from "../components/Icons.jsx";
@@ -464,7 +464,7 @@ function PerformanceSection({ perf, pace, onOpenRep }) {
                   return (
                     <React.Fragment key={key}>
                       <tr className="siq-rep-row" onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}>
-                        <td>{isOpen ? "▾" : "▸"} {r.rep}</td>
+                        <td><Chevron open={isOpen} style={{ marginRight: 6 }} /> {r.rep}</td>
                         <HeatCell v={r.dataPct} /><HeatCell v={r.cloudPct} /><HeatCell v={r.mobilePct} />
                         <HeatCell v={r.weightedPct} bold />
                         <td style={{ textAlign: "right" }}>{gbp(r.gm)}</td>

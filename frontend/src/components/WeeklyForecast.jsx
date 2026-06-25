@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useToast } from "./Toast.jsx";
 import { useCachedGet } from "../useCachedGet.js";
 import { Gauge, ProgressRow } from "./Dashboard.jsx";
+import { Chevron } from "./ui.jsx";
 import ConsistencyStrip from "./ConsistencyStrip.jsx";
 
 /* Rep-facing Weekly Forecast card (Today). Two modes:
@@ -72,9 +73,9 @@ export default function WeeklyForecast() {
   const pacing = ach.pacing;
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div className="flex" style={{ gap: 8, marginBottom: open ? 12 : 0, alignItems: "center" }}>
-        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up" : "Roll down"} title={open ? "Roll up" : "Roll down"}
-          onClick={() => setOpen((v) => !v)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
+      <div className="flex" style={{ gap: 8, marginBottom: open ? 12 : 0, alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
+        <Chevron open={open} />
         <span aria-hidden="true">🎯</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>This week's forecast</span>
         <span className="muted small" style={{ marginLeft: "auto" }}>{data.week} · 🔒 locked</span>

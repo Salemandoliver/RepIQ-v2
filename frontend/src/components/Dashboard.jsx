@@ -14,20 +14,14 @@ export function achievementBand(pct) {
   return "red";
 }
 
-function polar(cx, cy, r, deg) {
-  const a = (deg * Math.PI) / 180;
-  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-}
-// Half-circle arc from 180° (left) to 0° (right), swept by `frac` (0..1).
-function arc(cx, cy, r, frac) {
-  const end = 180 - 180 * Math.max(0, Math.min(1, frac));
-  const [x1, y1] = polar(cx, cy, r, 180);
-  const [x2, y2] = polar(cx, cy, r, end);
-  const large = 180 - end > 180 ? 1 : 0;
-  return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+// The top half-circle, left → right. (Sweep flag 1 renders it over the top in SVG's y-down space.)
+// We draw this once and reveal a fraction of it with stroke-dasharray + pathLength — reliable for
+// any value (no per-value trig, so partial fills can't land below the centre line).
+function semiPath(cx, cy, r) {
+  return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
 }
 
-/* A half-circle gauge. `value` is a percentage (may exceed 100 — the arc caps at full but the
+/* A half-circle gauge. `value` is a percentage (may exceed 100 — the fill caps at full but the
    number shows the true figure). `color`/`band` optional; otherwise derived from achievement bands. */
 export function Gauge({ value, label, sub, size = 132, color, band, track = "#eef0f3", thickness = 11 }) {
   const w = size;
@@ -36,14 +30,18 @@ export function Gauge({ value, label, sub, size = 132, color, band, track = "#ee
   const cy = h - 6;
   const r = w / 2 - thickness / 2 - 2;
   const has = value != null && !Number.isNaN(value);
-  const frac = has ? Math.min(value, 100) / 100 : 0;
+  const fillPct = has ? Math.max(0, Math.min(value, 100)) : 0;   // 0..100 of the arc
   const stroke = color || RAG[band || achievementBand(has ? value : null)] || "var(--text-faint)";
+  const d = semiPath(cx, cy, r);
   return (
     <div style={{ textAlign: "center", minWidth: w }}>
       <svg width={w} height={h + 4} viewBox={`0 0 ${w} ${h + 4}`} role="img"
         aria-label={`${label || "value"}: ${has ? Math.round(value) + "%" : "no data"}`}>
-        <path d={arc(cx, cy, r, 1)} fill="none" stroke={track} strokeWidth={thickness} strokeLinecap="round" />
-        {has && <path d={arc(cx, cy, r, frac)} fill="none" stroke={stroke} strokeWidth={thickness} strokeLinecap="round" />}
+        <path d={d} fill="none" stroke={track} strokeWidth={thickness} strokeLinecap="round" pathLength="100" />
+        {has && fillPct > 0 && (
+          <path d={d} fill="none" stroke={stroke} strokeWidth={thickness} strokeLinecap="round"
+            pathLength="100" strokeDasharray={`${fillPct} 100`} />
+        )}
         <text x={cx} y={cy - 6} textAnchor="middle" style={{ fontSize: size * 0.21, fontWeight: 800, fill: "var(--text)" }}>
           {has ? `${Math.round(value)}%` : "—"}
         </text>

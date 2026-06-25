@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
-import { Spinner } from "./ui.jsx";
+import { Spinner, Chevron } from "./ui.jsx";
+import ReflectionLauncher from "./ReflectionLauncher.jsx";
 
 /* Feature 8 — weekly AI performance video / briefing. Shows the rendered HeyGen video when
    ready AND always shows the written briefing beneath it, so the rep always has readable
@@ -36,9 +37,9 @@ export default function WeeklyVideo({ userId }) {
   const wk = v.weekStart ? new Date(v.weekStart).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
   return (
     <div className="card">
-      <div className="flex" style={{ gap: 8, marginBottom: 10 }}>
-        <button className="btn btn-ghost btn-sm" aria-label={open ? "Roll up text" : "Roll down text"} title={open ? "Roll up the written briefing" : "Roll down the written briefing"}
-          onClick={() => setOpen((o) => !o)} style={{ padding: "0 4px", lineHeight: 1 }}>{open ? "▾" : "▸"}</button>
+      <div className="flex" style={{ gap: 8, marginBottom: 10, alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((o) => !o)} role="button" aria-expanded={open} title="Roll the written briefing up or down (the video stays)">
+        <Chevron open={open} />
         <span aria-hidden="true">🎬</span>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{userId ? (v.title || "Weekly performance video") : "Your weekly performance video"}</span>
         <span className="muted small" style={{ marginLeft: "auto" }}>{wk ? `presented by Oliver · week of ${wk}` : "presented by Oliver"}</span>
@@ -61,6 +62,7 @@ export default function WeeklyVideo({ userId }) {
         </div>
         {v.error && <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>Error: {v.error}</div>}
       </>)}
+      {!userId && v.id && <ReflectionLauncher videoId={v.id} presenter="Oliver" />}
     </div>
   );
 }

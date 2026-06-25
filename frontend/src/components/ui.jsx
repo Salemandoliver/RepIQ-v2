@@ -2,20 +2,32 @@ import React from "react";
 import { initials, scoreColorHard } from "../utils";
 import { XIcon } from "./Icons.jsx";
 
-// Collapsible card shell — click the header (or the up/down arrow) to fold. Defaults to open
-// ("full display"). `actions` renders extra controls on the header right, before the arrow.
+// The one and only collapse chevron used app-wide: a right-pointing ▶ that rotates to point down
+// when open, sitting to the LEFT of the title. Keep every roll-up/down control consistent by using
+// this everywhere.
+export function Chevron({ open, style }) {
+  return (
+    <span aria-hidden="true" style={{
+      fontSize: 11, color: "var(--text-soft)", display: "inline-block", flexShrink: 0, lineHeight: 1,
+      transition: "transform .15s ease", transform: open ? "rotate(90deg)" : "rotate(0deg)", ...style,
+    }}>▶</span>
+  );
+}
+
+// Collapsible card shell — click the header to fold. Defaults to open ("full display"). The chevron
+// sits on the left (consistent with the rest of the app); `actions` render on the header right.
 export function CollapsibleCard({ title, actions, defaultOpen = true, style, className = "card", children, titleTag = "h2" }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const T = titleTag;
   return (
     <div className={className} style={style}>
-      <div className="spread" style={{ cursor: "pointer", marginBottom: open ? 12 : 0 }} onClick={() => setOpen((v) => !v)}>
-        <T className="card-title" style={{ margin: 0 }}>{title}</T>
-        <div className="flex" style={{ gap: 10, alignItems: "center" }}>
-          {actions}
-          <button className="btn btn-ghost btn-sm" aria-label={open ? "Collapse" : "Expand"} style={{ lineHeight: 1 }}
-            onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>{open ? "▲" : "▼"}</button>
+      <div className="spread" style={{ cursor: "pointer", marginBottom: open ? 12 : 0 }}
+        onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
+        <div className="flex" style={{ gap: 8, alignItems: "center", minWidth: 0 }}>
+          <Chevron open={open} />
+          <T className="card-title" style={{ margin: 0 }}>{title}</T>
         </div>
+        {actions && <div className="flex" style={{ gap: 10, alignItems: "center" }}>{actions}</div>}
       </div>
       {open && children}
     </div>

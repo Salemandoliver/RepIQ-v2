@@ -58,7 +58,21 @@ def _facts(db, user: User, days: int) -> dict:
     except Exception:
         pass
 
-    return {"name": user.short_name or user.name, "insights": ins,
+    # The rep's own reflection on their latest review — start the 1-to-1 from what they already said.
+    reflection = None
+    try:
+        from ...modules.reflections import services as _rf
+        s = _rf.reflection_signal(db, user)
+        if s.get("status") not in (None, "none"):
+            reflection = {"signalSummary": s.get("summary"), "summary": s.get("summaryText"),
+                          "openCommitments": s.get("openCommitments"),
+                          "blockersNeedingHelp": s.get("blockersNeedingHelp"),
+                          "engagement": s.get("engagement"), "selfAwareness": s.get("selfAwareness"),
+                          "flags": [k for k, v in (s.get("flags") or {}).items() if v]}
+    except Exception:
+        pass
+
+    return {"name": user.short_name or user.name, "insights": ins, "reflection": reflection,
             "metrics": {"calls": ravg.get("calls"), "quality": ravg.get("quality"),
                         "questions": ravg.get("questions"), "talk_ratio": ravg.get("talk_ratio"),
                         "interruptions": ravg.get("interruptions"), "closeRate": ravg.get("closeRate"),
@@ -97,7 +111,10 @@ def brief(db, user_id: int, days: int = 30) -> dict:
         "specific, evidence-based prep brief. Lead with genuine positives, be constructive on gaps, and "
         "give the manager concrete talking points and questions to ask. Where the facts include a "
         "'forecast' block, treat weekly-forecast reliability as a key performance dimension — praise "
-        "consistency, address chronic misses or sandbagging, and reference this week's pacing. Keep "
+        "consistency, address chronic misses or sandbagging, and reference this week's pacing. Where "
+        "the facts include a 'reflection' block, lead with the rep's OWN words and the commitments they "
+        "made — open from what they already said, follow up on their stated blockers, and gently address "
+        "any gap between their self-view and the data. Keep "
         "every number EXACTLY as given; never invent figures. UK English. Return STRICT JSON only."
     )
     user_msg = (

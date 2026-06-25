@@ -291,6 +291,33 @@ def _forecast_ask_context(db, user: User, manager: bool) -> str:
         return ""
 
 
+def _reflection_ask_context(db, user: User, manager: bool) -> str:
+    """Review-reflection context for Ask — the team's reflection standing for managers, the rep's own
+    commitments/blockers for reps. Makes the rep's own words answerable."""
+    try:
+        from ...modules.reflections import services as rf
+        if manager:
+            ts = rf.team_reflection_summary(db)
+            lines = []
+            if ts.get("notReflected"):
+                lines.append("Not yet reflected: " + ", ".join(ts["notReflected"]))
+            for b in ts.get("blockersForHelp", []):
+                lines.append(f"{b['name']} blocker: " + ", ".join(b.get("blockers") or []))
+            if ts.get("topThemes"):
+                lines.append("Reflection themes: " + ", ".join(ts["topThemes"]))
+            lines += ["- " + s["summary"] for s in ts.get("signals", []) if s.get("summary")]
+            return ("REVIEW REFLECTIONS:\n" + "\n".join(lines)) if lines else ""
+        sig = rf.reflection_signal(db, user)
+        if sig.get("status") in (None, "none"):
+            return ""
+        bits = [sig.get("summary")]
+        if sig.get("openCommitments"):
+            bits.append("Your commitments: " + "; ".join(sig["openCommitments"]))
+        return "YOUR LATEST REVIEW REFLECTION:\n" + " ".join(b for b in bits if b)
+    except Exception:
+        return ""
+
+
 def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
     from ...pipeline.analyzer import _claude
     from ...config import settings
@@ -302,6 +329,7 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         calls_ctx = _calls_context(db, ids, start, end, label, limit=70, team=True)
         parts = [_manager_ask_context(command_centre(db, user)), _team_holiday_context(db),
                  _forecast_ask_context(db, user, manager=True),
+                 _reflection_ask_context(db, user, manager=True),
                  _campaign_context(db, user, manager=True), calls_ctx]
         context = "\n\n".join(p for p in parts if p)
         system = (
@@ -316,6 +344,7 @@ def ask_copilot(db, user: User, question: str, scope: str = "yesterday") -> str:
         user_msg = f"MANAGER: {user.name} · scope: {label}\n\n{context}\n\nQUESTION: {question}"
     else:
         parts = [_trackers_context(db, user, role), _forecast_ask_context(db, user, manager=False),
+                 _reflection_ask_context(db, user, manager=False),
                  _campaign_context(db, user, manager=False),
                  _calls_context(db, [user.id], start, end, label)]
         context = "\n\n".join(p for p in parts if p)

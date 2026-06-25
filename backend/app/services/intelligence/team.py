@@ -338,6 +338,20 @@ def command_centre(db, manager: User, team: str | None = None) -> dict:
                                "detail": s.get("summary")})
     except Exception:
         pass
+    # Review-reflection alerts — who hasn't reflected, and who flagged a blocker that needs the manager.
+    try:
+        from ...modules.reflections import services as _rf
+        rsum = _rf.team_reflection_summary(db, team)
+        for nm in rsum.get("notReflected", []):
+            alerts.append({"severity": "good", "type": "reflection_missing", "rep": nm,
+                           "text": f"{nm} hasn't reflected on their latest review yet."})
+        for b in rsum.get("blockersForHelp", []):
+            bl = (b.get("blockers") or [None])[0]
+            alerts.append({"severity": "warn", "type": "reflection_blocker", "rep": b["name"],
+                           "text": f"{b['name']} flagged a blocker in their reflection" + (f": {bl}" if bl else "."),
+                           "detail": (b.get("blockers") and "; ".join(b["blockers"])) or None})
+    except Exception:
+        pass
     aggregates = _team_aggregates(db, cards, reps, asof)
     deals = _deals(db, reps, asof)
     try:
